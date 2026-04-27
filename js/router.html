@@ -69,6 +69,8 @@ const Router = (() => {
 
   let currentUser = null;
   let visibleRoutes = [];
+  let activeNavigationId = 0;
+  let activePageContext = null;
 
   // =============================================
   // 初始化
@@ -158,12 +160,15 @@ const Router = (() => {
     // 載入頁面內容
     const mainContent = document.getElementById('mainContent');
     try {
+      const navId = ++activeNavigationId;
+      const pageContext = createPageContext(navId, normalizedHash, mainContent);
+      activePageContext = pageContext;
       const loader = Pages[route.loaderKey];
       if (typeof loader !== 'function') {
         throw new Error(`找不到頁面載入函式：${route.loaderKey}`);
       }
       Components.showSpinner('mainContent');
-      await loader(mainContent, currentUser);
+      await loader(mainContent, currentUser, pageContext);
     } catch (error) {
       console.error('頁面載入失敗：', error);
       mainContent.innerHTML = `
@@ -333,11 +338,34 @@ const Router = (() => {
     }
   }
 
+  function createPageContext(navId, hash, container) {
+    return {
+      navId,
+      hash,
+      container,
+      isActive() {
+        return activeNavigationId === navId
+          && activePageContext
+          && activePageContext.navId === navId
+          && container
+          && container.isConnected
+          && location.hash.replace(/\/$/, '') === hash;
+      },
+      query(selector) {
+        return container ? container.querySelector(selector) : null;
+      },
+    };
+  }
+
   // =============================================
   // Public API
   // =============================================
 
-  return { init, navigateTo };
+  return {
+    init,
+    navigateTo,
+    getActivePageContext: () => activePageContext,
+  };
 
 })();
 
@@ -356,7 +384,7 @@ const Pages = {
   // ========================
   // 儀表板
   // ========================
-  async loadDashboard(container, user) {
+  async loadDashboard(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header">
         <h1>📊 儀表板</h1>
@@ -371,6 +399,7 @@ const Pages = {
 
     try {
       const stats = await API.getDashboardStats();
+      if (!pageCtx.isActive()) return;
       const logs = stats.recentLogs || [];
       const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
       const concurrentCount = Array.isArray(stats.concurrentPersonnel)
@@ -381,7 +410,8 @@ const Pages = {
         ? ((stats.auditAlerts.accountabilityIssues > 0 ? stats.auditAlerts.accountabilityIssues : 0)
           + (stats.auditAlerts.roleCodeIssues > 0 ? stats.auditAlerts.roleCodeIssues : 0))
         : '—';
-      const statGrid = document.getElementById('statGrid');
+      const statGrid = pageCtx.query('#statGrid');
+      if (!statGrid) return;
       statGrid.innerHTML = `
         <div class="stat-card"><div class="stat-card__label">在職總人數</div><div class="stat-card__value">${total}</div></div>
         <div class="stat-card"><div class="stat-card__label">兼任人員</div><div class="stat-card__value">${concurrentCount}</div></div>
@@ -392,7 +422,8 @@ const Pages = {
         <div class="stat-card"><div class="stat-card__label">統計範圍</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(stats.scope || '—')}</div></div>
       `;
 
-      const logsDiv = document.getElementById('dashboardLogs');
+      const logsDiv = pageCtx.query('#dashboardLogs');
+      if (!logsDiv) return;
       if (logs.length === 0) {
         logsDiv.innerHTML = '<div class="card__header"><h3 class="card__title">近期異動紀錄</h3></div><div class="empty-state"><p>尚無操作記錄</p></div>';
         return;
@@ -413,6 +444,7 @@ const Pages = {
           </table>
         </div>`;
     } catch (err) {
+      if (!pageCtx.isActive()) return;
       console.error('loadDashboard 失敗：', err);
       API.handleError(err);
       Components.renderLoadError('mainContent', {
@@ -420,12 +452,13 @@ const Pages = {
         message: '首頁資料未能完成初始化。',
         details: err.message,
         actionLabel: '重新載入首頁',
-        onAction: () => Pages.loadDashboard(container, user),
+        onAction: () => Router.navigateTo(pageCtx.hash),
       });
       API.getAppDebugInfo()
         .then(info => {
+          if (!pageCtx.isActive()) return;
           console.error('Dashboard debug info:', info);
-          const debugContainer = document.getElementById('mainContent');
+          const debugContainer = pageCtx.container;
           if (!debugContainer) return;
           debugContainer.insertAdjacentHTML('beforeend', `
             <div class="card" style="margin-top:1rem">
@@ -447,7 +480,7 @@ const Pages = {
   // ========================
   // 人員管理
   // ========================
-  async loadPersonnel(container, user) {
+  async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
 
@@ -469,6 +502,7 @@ const Pages = {
 
     try {
       let data = await API.getAllPersonnel();
+      if (!pageCtx.isActive()) return;
       let filtered = data;
 
       const renderTable = () => {
@@ -489,7 +523,9 @@ const Pages = {
       renderTable();
 
       // 即時搜尋
-      document.getElementById('personnelSearch').addEventListener('input', e => {
+      const searchInput = pageCtx.query('#personnelSearch');
+      if (!searchInput) return;
+      searchInput.addEventListener('input', e => {
         const q = e.target.value.toLowerCase();
         filtered = data.filter(p =>
           p.name.toLowerCase().includes(q) ||
@@ -500,9 +536,13 @@ const Pages = {
       });
 
       if (canWrite) {
-        document.getElementById('addPersonBtn').onclick = () => Pages._showPersonForm(null, () => Pages.loadPersonnel(container, user));
+        const addBtn = pageCtx.query('#addPersonBtn');
+        if (addBtn) {
+          addBtn.onclick = () => Pages._showPersonForm(null, () => Router.navigateTo(pageCtx.hash));
+        }
       }
     } catch (err) {
+      if (!pageCtx.isActive()) return;
       console.error('loadPersonnel 失敗：', err);
       API.handleError(err);
       Components.renderLoadError('personnelTable', {
@@ -510,7 +550,7 @@ const Pages = {
         message: '無法取得人員清單。',
         details: err.message,
         actionLabel: '重試',
-        onAction: () => Pages.loadPersonnel(container, user),
+        onAction: () => Router.navigateTo(pageCtx.hash),
       });
     }
   },
@@ -553,7 +593,9 @@ const Pages = {
   },
 
   _editPerson(email) {
+    const pageCtx = Router.getActivePageContext();
     API.getAllPersonnel().then(data => {
+      if (!pageCtx || !pageCtx.isActive()) return;
       const person = data.find(p => p.email === email);
       if (person) Pages._showPersonForm(person, () => location.reload());
     });
@@ -575,7 +617,7 @@ const Pages = {
   // ========================
   // 職務配置
   // ========================
-  async loadAssignments(container, user) {
+  async loadAssignments(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header"><h1>🗂️ 職務配置管理</h1></div>
       <div class="card" style="margin-bottom:1rem">
@@ -588,6 +630,7 @@ const Pages = {
       <div id="assignmentResult"></div>`;
 
     const all = await API.getAllPersonnel().catch(err => {
+      if (!pageCtx.isActive()) return [];
       console.error('loadAssignments 初始化失敗：', err);
       API.handleError(err);
       Components.renderLoadError('assignmentResult', {
@@ -595,16 +638,21 @@ const Pages = {
         message: '無法載入可搜尋的人員名單。',
         details: err.message,
         actionLabel: '重試',
-        onAction: () => Pages.loadAssignments(container, user),
+        onAction: () => Router.navigateTo(pageCtx.hash),
       });
       return [];
     });
+    if (!pageCtx.isActive()) return;
 
-    document.getElementById('assignSearch').addEventListener('input', async e => {
+    const assignSearch = pageCtx.query('#assignSearch');
+    if (!assignSearch) return;
+    assignSearch.addEventListener('input', async e => {
+      if (!pageCtx.isActive()) return;
       const q = e.target.value.trim().toLowerCase();
       if (q.length < 2) return;
       const matches = all.filter(p => p.email.includes(q) || p.name.includes(q));
-      const resultDiv = document.getElementById('assignmentResult');
+      const resultDiv = pageCtx.query('#assignmentResult');
+      if (!resultDiv) return;
       resultDiv.innerHTML = matches.slice(0, 5).map(p => `
         <div class="card" style="cursor:pointer;margin-bottom:.5rem" onclick="Pages._loadPersonAssignments('${p.email}','${Components.escapeHtml(p.name)}')">
           <strong>${Components.escapeHtml(p.name)}</strong>
@@ -615,8 +663,11 @@ const Pages = {
 
   async _loadPersonAssignments(email, name) {
     try {
+      const pageCtx = Router.getActivePageContext();
       const assignments = await API.getAssignments(email);
-      const result = document.getElementById('assignmentResult');
+      if (!pageCtx || !pageCtx.isActive()) return;
+      const result = pageCtx.query('#assignmentResult');
+      if (!result) return;
       result.innerHTML = `<div class="card__header"><h3 class="card__title">📋 ${Components.escapeHtml(name)} 的職務配置</h3></div>` +
         Components.PersonCard({ email, name }, assignments) +
         `<div id="assignTable"></div>`;
@@ -635,7 +686,7 @@ const Pages = {
   // ========================
   // 組織架構樹
   // ========================
-  async loadOrg(container) {
+  async loadOrg(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header"><h1>🌳 組織架構</h1></div>
       <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap" id="orgTypeTabs">
@@ -646,14 +697,18 @@ const Pages = {
       <div id="orgTreeContainer" class="card"></div>`;
 
     const renderTree = async (type) => {
-      const treeDiv = document.getElementById('orgTreeContainer');
+      if (!pageCtx.isActive()) return;
+      const treeDiv = pageCtx.query('#orgTreeContainer');
+      if (!treeDiv) return;
       treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
       try {
         const tree = await API.getOrgTree(type || null);
+        if (!pageCtx.isActive()) return;
         treeDiv.innerHTML = '';
         if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
         tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0)));
       } catch (err) {
+        if (!pageCtx.isActive()) return;
         console.error('loadOrg 失敗：', err);
         API.handleError(err);
         Components.renderLoadError('orgTreeContainer', {
@@ -661,17 +716,20 @@ const Pages = {
           message: '無法取得組織樹資料。',
           details: err.message,
           actionLabel: '重試',
-          onAction: () => renderTree(type),
+          onAction: () => Router.navigateTo(pageCtx.hash),
         });
       }
     };
 
     await renderTree(null);
 
-    document.getElementById('orgTypeTabs').addEventListener('click', async e => {
+    const orgTabs = pageCtx.query('#orgTypeTabs');
+    if (!orgTabs) return;
+    orgTabs.addEventListener('click', async e => {
+      if (!pageCtx.isActive()) return;
       const btn = e.target.closest('button');
       if (!btn) return;
-      document.querySelectorAll('#orgTypeTabs button').forEach(b => b.className = 'btn btn--ghost btn--sm');
+      container.querySelectorAll('#orgTypeTabs button').forEach(b => b.className = 'btn btn--ghost btn--sm');
       btn.className = 'btn btn--primary btn--sm';
       await renderTree(btn.dataset.type || null);
     });
@@ -680,7 +738,7 @@ const Pages = {
   // ========================
   // 駐站管理員
   // ========================
-  async loadStations(container) {
+  async loadStations(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header"><h1>🏥 駐站管理員儀表板</h1></div>
       <div class="search-bar" style="margin-bottom:1rem">
@@ -691,10 +749,12 @@ const Pages = {
 
     try {
       const managers = await API.getStationManagers();
+      if (!pageCtx.isActive()) return;
       let filtered = managers;
 
       const render = () => {
-        const div = document.getElementById('stationList');
+        const div = pageCtx.query('#stationList');
+        if (!div) return;
         div.innerHTML = filtered.length === 0 ? '<div class="empty-state"><p>無符合站長</p></div>' :
           filtered.map(mgr => `
             <div class="card" style="margin-bottom:.75rem">
@@ -715,12 +775,16 @@ const Pages = {
       };
       render();
 
-      document.getElementById('stationSearch').addEventListener('input', e => {
+      const stationSearch = pageCtx.query('#stationSearch');
+      if (!stationSearch) return;
+      stationSearch.addEventListener('input', e => {
+        if (!pageCtx.isActive()) return;
         const q = e.target.value.toLowerCase();
         filtered = managers.filter(m => m.name.toLowerCase().includes(q));
         render();
       });
     } catch (err) {
+      if (!pageCtx.isActive()) return;
       console.error('loadStations 失敗：', err);
       API.handleError(err);
       Components.renderLoadError('stationList', {
@@ -728,7 +792,7 @@ const Pages = {
         message: '無法取得駐站管理員資料。',
         details: err.message,
         actionLabel: '重試',
-        onAction: () => Pages.loadStations(container),
+        onAction: () => Router.navigateTo(pageCtx.hash),
       });
     }
   },
@@ -736,7 +800,7 @@ const Pages = {
   // ========================
   // RACI 查詢
   // ========================
-  async loadRaci(container) {
+  async loadRaci(container, user, pageCtx) {
     const taskCodes = ['ISMS-DOC','ISMS-RISK','ISMS-SEC','ISMS-INC','ISMS-OPS','ISMS-AUDIT','ISMS-BCM','PIMS-OP'];
     container.innerHTML = `
       <div class="page-header">
@@ -752,19 +816,24 @@ const Pages = {
     let roleMap = new Map();
     try {
       const roleData = await API.getRoleMap().catch(() => []);
+      if (!pageCtx.isActive()) return;
       roleData.forEach(r => roleMap.set(r.roleCode, r.roleName));
     } catch (e) {}
 
     const renderRaciTable = async (taskCode) => {
-      const div = document.getElementById('raciTable');
+      if (!pageCtx.isActive()) return;
+      const div = pageCtx.query('#raciTable');
+      if (!div) return;
       div.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
       try {
         const data = await API.getRaciByTask(taskCode || null);
+        if (!pageCtx.isActive()) return;
         div.innerHTML = `<div class="table-wrapper"><table class="data-table">
           <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>R 執行</th><th>A 當責</th><th>C 諮詢</th><th>I 告知</th><th>備註</th></tr></thead>
           <tbody>${data.length ? data.map(r => Components.RaciRow(r, roleMap)).join('') : '<tr><td colspan="8"><div class="empty-state"><p>無資料</p></div></td></tr>'}</tbody>
         </table></div>`;
       } catch (err) {
+        if (!pageCtx.isActive()) return;
         console.error('loadRaci 失敗：', err);
         API.handleError(err);
         Components.renderLoadError('raciTable', {
@@ -772,15 +841,17 @@ const Pages = {
           message: '無法取得 RACI 清單。',
           details: err.message,
           actionLabel: '重試',
-          onAction: () => renderRaciTable(taskCode),
+          onAction: () => Router.navigateTo(pageCtx.hash),
         });
       }
     };
 
     await renderRaciTable(null);
 
+    if (!pageCtx.isActive()) return;
     container.querySelectorAll('button[data-task]').forEach(btn => {
       btn.onclick = () => {
+        if (!pageCtx.isActive()) return;
         container.querySelectorAll('button[data-task]').forEach(b => b.className = 'btn btn--ghost btn--sm');
         btn.className = 'btn btn--primary btn--sm';
         renderRaciTable(btn.dataset.task);
@@ -791,7 +862,7 @@ const Pages = {
   // ========================
   // 我的 RACI 責任
   // ========================
-  async loadMyRaci(container) {
+  async loadMyRaci(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header">
         <h1>🙋 我的 RACI 責任</h1>
@@ -801,7 +872,9 @@ const Pages = {
 
     try {
       const data = await API.getMyRaciTasks();
-      const div = document.getElementById('myRaciContent');
+      if (!pageCtx.isActive()) return;
+      const div = pageCtx.query('#myRaciContent');
+      if (!div) return;
       const sections = [
         { key: 'R', label: '🔴 R — 執行者（Responsible）', desc: '您負責實際執行的工作項目' },
         { key: 'A', label: '🟠 A — 當責者（Accountable）', desc: '您具有最終核准責任的工作項目（ISO 稽核重點）' },
@@ -828,6 +901,7 @@ const Pages = {
             </table></div>` : '<div class="empty-state"><p>無相關工作項目</p></div>'}
         </div>`).join('');
     } catch (err) {
+      if (!pageCtx.isActive()) return;
       console.error('loadMyRaci 失敗：', err);
       API.handleError(err);
       Components.renderLoadError('myRaciContent', {
@@ -835,7 +909,7 @@ const Pages = {
         message: '無法取得個人 RACI 資料。',
         details: err.message,
         actionLabel: '重試',
-        onAction: () => Pages.loadMyRaci(container),
+        onAction: () => Router.navigateTo(pageCtx.hash),
       });
     }
   },
@@ -843,7 +917,7 @@ const Pages = {
   // ========================
   // 稽核驗證
   // ========================
-  async loadAudit(container) {
+  async loadAudit(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header">
         <h1>🔍 稽核驗證報告</h1>
@@ -865,10 +939,16 @@ const Pages = {
         </div>
       </div>`;
 
-    document.getElementById('runAuditBtn').onclick = async () => {
-      const btn = document.getElementById('runAuditBtn');
-      const progressDiv = document.getElementById('auditProgress');
-      const progressBar = document.getElementById('auditProgressBar');
+    const runAuditBtn = pageCtx.query('#runAuditBtn');
+    const exportAuditBtn = pageCtx.query('#exportAuditBtn');
+    if (!runAuditBtn || !exportAuditBtn) return;
+
+    runAuditBtn.onclick = async () => {
+      if (!pageCtx.isActive()) return;
+      const btn = pageCtx.query('#runAuditBtn');
+      const progressDiv = pageCtx.query('#auditProgress');
+      const progressBar = pageCtx.query('#auditProgressBar');
+      if (!btn || !progressDiv || !progressBar) return;
       btn.disabled = true;
       progressDiv.hidden = false;
 
@@ -881,28 +961,38 @@ const Pages = {
 
       try {
         const results = await API.runFullAudit();
+        if (!pageCtx.isActive()) {
+          clearInterval(interval);
+          return;
+        }
         clearInterval(interval);
         progressBar.style.width = '100%';
         setTimeout(() => { progressDiv.hidden = true; }, 500);
         Components.AuditResultPanel(results, 'auditResult');
       } catch (err) {
         clearInterval(interval);
+        if (!pageCtx.isActive()) return;
         API.handleError(err);
       } finally {
-        btn.disabled = false;
+        if (pageCtx.isActive() && btn) btn.disabled = false;
       }
     };
 
-    document.getElementById('exportAuditBtn').onclick = async () => {
+    exportAuditBtn.onclick = async () => {
+      if (!pageCtx.isActive()) return;
       try {
         const result = await API.exportAudit();
+        if (!pageCtx.isActive()) return;
         const blob = new Blob(['\uFEFF' + result.csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = `稽核報告_${new Date().toLocaleDateString('zh-TW')}.csv`;
         a.click(); URL.revokeObjectURL(url);
         Components.showToast('稽核報告匯出成功', 'success');
-      } catch (err) { API.handleError(err); }
+      } catch (err) {
+        if (!pageCtx.isActive()) return;
+        API.handleError(err);
+      }
     };
   },
 };
