@@ -292,3 +292,17 @@ const ROLE_LABELS = {
 function getRoleLabel(role) {
   return ROLE_LABELS[role] || '未知角色';
 }
+
+/**
+ * GAS 檔案層級函式預設會暴露為全域函式，不會自動形成命名空間物件。
+ * 補上 AuthService namespace，讓其他檔案可用 AuthService.xxx 呼叫。
+ */
+const AuthService = {
+  getCurrentUser,
+  checkPermission,
+  getSessionInfo,
+  resolveUserRole,
+  determineRole,
+  hasPermission,
+  getRoleLabel,
+};

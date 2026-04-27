@@ -483,3 +483,32 @@ function getSheetRows(sheetName) {
   const data = sheet.getDataRange().getValues();
   return data.slice(1); // 第 1 列為欄位標題
 }
+
+/**
+ * GAS 檔案層級函式預設是全域函式，不會自動形成命名空間物件。
+ * 補上 DataService namespace，讓其他檔案可用 DataService.xxx 呼叫。
+ */
+const DataService = {
+  getSheet1Data,
+  findPersonByEmail,
+  getSheet2Data,
+  findOrgByCode,
+  getSheet3DataByEmail,
+  getSheet3DataByOrgCode,
+  hasDirectReport,
+  getAllAssignments,
+  findAssignmentsByEmail,
+  getSheet4Data,
+  getSheet5Data,
+  findRoleByCode,
+  appendPersonnel,
+  updatePersonnelByEmail,
+  deletePersonnelByEmail,
+  appendAssignment,
+  updateAssignmentByRow,
+  deleteAssignmentByRow,
+  appendOrgNode,
+  updateOrgNodeByCode,
+  appendAuditLog,
+  getRecentAuditLogs,
+};
