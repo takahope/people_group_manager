@@ -16,54 +16,54 @@ const Router = (() => {
 
   /**
    * @type {Array<{
-   *   hash:     string,          // URL hash
-   *   label:    string,          // 選單顯示名稱
-   *   icon:     string,          // SVG path 或 emoji
-   *   section:  string,          // 選單分區標題
-   *   feature:  string,          // 權限檢查 key（對應 AuthService PERMISSION_MAP）
-   *   loader:   Function,        // 頁面載入函式
-   * }>}
+    *   hash:     string,          // URL hash
+    *   label:    string,          // 選單顯示名稱
+    *   icon:     string,          // SVG path 或 emoji
+    *   section:  string,          // 選單分區標題
+    *   feature:  string,          // 權限檢查 key（對應 AuthService PERMISSION_MAP）
+    *   loaderKey: string,         // 頁面載入函式名稱（對應 Pages）
+    * }>}
    */
   const ROUTES = [
     {
       hash: '#/dashboard', label: '儀表板', icon: '📊', section: '總覽',
       feature: 'dashboard.full,dashboard.dept,dashboard.personal',
-      loader: Pages.loadDashboard,
+      loaderKey: 'loadDashboard',
     },
     {
       hash: '#/personnel', label: '人員管理', icon: '👥', section: '人事管理',
       feature: 'personnel.read.all,personnel.read.dept,personnel.read.self',
-      loader: Pages.loadPersonnel,
+      loaderKey: 'loadPersonnel',
     },
     {
       hash: '#/assignments', label: '職務配置', icon: '🗂️', section: '人事管理',
       feature: 'assignment.read.all',
-      loader: Pages.loadAssignments,
+      loaderKey: 'loadAssignments',
     },
     {
       hash: '#/org', label: '組織架構', icon: '🌳', section: '人事管理',
       feature: 'org.read',
-      loader: Pages.loadOrg,
+      loaderKey: 'loadOrg',
     },
     {
       hash: '#/stations', label: '駐站管理員', icon: '🏥', section: '人事管理',
       feature: 'station.read',
-      loader: Pages.loadStations,
+      loaderKey: 'loadStations',
     },
     {
       hash: '#/raci', label: 'RACI 查詢', icon: '📋', section: '資安管理',
       feature: 'raci.read',
-      loader: Pages.loadRaci,
+      loaderKey: 'loadRaci',
     },
     {
       hash: '#/raci/me', label: '我的責任', icon: '🙋', section: '資安管理',
       feature: 'raci.read',
-      loader: Pages.loadMyRaci,
+      loaderKey: 'loadMyRaci',
     },
     {
       hash: '#/audit', label: '稽核驗證', icon: '🔍', section: '稽核',
       feature: 'audit.run',
-      loader: Pages.loadAudit,
+      loaderKey: 'loadAudit',
     },
   ];
 
@@ -158,8 +158,12 @@ const Router = (() => {
     // 載入頁面內容
     const mainContent = document.getElementById('mainContent');
     try {
+      const loader = Pages[route.loaderKey];
+      if (typeof loader !== 'function') {
+        throw new Error(`找不到頁面載入函式：${route.loaderKey}`);
+      }
       Components.showSpinner('mainContent');
-      await route.loader(mainContent, currentUser);
+      await loader(mainContent, currentUser);
     } catch (error) {
       console.error('頁面載入失敗：', error);
       mainContent.innerHTML = `
