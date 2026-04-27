@@ -40,7 +40,12 @@ const SESSION_KEY_PREFIX = 'HR_SESSION_';
 function getCurrentUser() {
   try {
     const email = Session.getActiveUser().getEmail();
-    if (!email) return errorResponse('無法取得登入 Email');
+    if (!email) {
+      Logger.log('getCurrentUser：Session.getActiveUser().getEmail() 為空值');
+      return errorResponse(
+        '無法取得登入 Email。請確認 Web App 以「使用者存取 Web 應用程式時」身分執行，且目前登入帳號與部署者位於允許的 Google Workspace 範圍內。'
+      );
+    }
 
     // 先嘗試從 Session 快取讀取
     const cached = getCachedSession(email);
@@ -70,7 +75,10 @@ function getCurrentUser() {
 function checkPermission(feature) {
   try {
     const email = Session.getActiveUser().getEmail();
-    if (!email) return false;
+    if (!email) {
+      Logger.log(`checkPermission：無法取得登入 Email，feature=${feature}`);
+      return false;
+    }
 
     const cached = getCachedSession(email);
     const role = cached ? cached.role : resolveUserRole(email)?.role;

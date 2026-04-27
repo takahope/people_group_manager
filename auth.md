@@ -92,3 +92,142 @@
 - `e003@example.org`、`e004@example.org`、`e005@example.org` 也都會被判定為 `ADMIN`，可作為備用高權限帳號。
 - `e006@example.org`、`e007@example.org` 也會是 `STAFF`，可作為一般員工備用帳號。
 - 若測試結果與預期不符，優先檢查 Sheet 1、Sheet 3 資料是否重複 append，或 Session 快取是否仍保留舊角色。
+
+
+## ADMIN
+
+  ### Sheet 1「人員主檔」
+
+  - A 信箱：admin.test@example.org
+  - B 姓名：最高權限測試
+  - C 資訊資產邏輯分組代號：DEPT-ADMIN
+  - D 資訊資產邏輯分組名稱：行政部
+
+  ### Sheet 3「人員職務配置」
+
+  - A 信箱：admin.test@example.org
+  - B 姓名：最高權限測試
+  - C 所屬組別代碼：DEPT-ADMIN
+  - D 所屬組別：行政部
+  - E 職稱：行政部長 或 執行長
+  - F 主管信箱：可空白
+  - G 直屬主管：可空白
+
+  判斷關鍵：E 欄包含 執行長 或 部長
+
+  ## HR
+
+  ### Sheet 1
+
+  - A：hr.test@example.org
+  - B：HR測試
+  - C：GRP-ADMIN
+  - D：行政支援組
+
+  ### Sheet 3
+
+  - A：hr.test@example.org
+  - B：HR測試
+  - C：GRP-ADMIN 或 GRP-PLAN
+  - D：行政支援組
+  - E：HR專員
+  - F：可填主管信箱
+  - G：可填主管姓名
+
+  判斷關鍵：C 欄是 GRP-ADMIN 或 GRP-PLAN
+
+  注意：E 欄不要含 部長、執行長
+
+  ## AUDITOR
+
+  ### Sheet 1
+
+  - A：auditor.test@example.org
+  - B：稽核測試
+  - C：TF-GRP-AUDIT
+  - D：內部稽核執行小組
+
+  ### Sheet 3
+
+  - A：auditor.test@example.org
+  - B：稽核測試
+  - C：TF-GRP-AUDIT
+  - D：內部稽核執行小組
+  - E：內部稽核員
+  - F：可填主管信箱
+  - G：可填主管姓名
+
+  判斷關鍵：C 欄包含 TF-GRP-AUDIT
+
+  注意：不要讓職稱含 部長
+
+  ## MGR
+
+  ### Sheet 1
+
+  - A：mgr.test@example.org
+  - B：主管測試
+  - C：GRP-REC
+  - D：收案組
+
+  ### Sheet 3
+
+  先新增主管本人：
+
+  - A：mgr.test@example.org
+  - B：主管測試
+  - C：GRP-REC
+  - D：收案組
+  - E：收案組組長
+  - F：可填上層主管信箱
+  - G：可填上層主管姓名
+
+  再新增一名下屬，重點是下屬那筆：
+
+  - A：staff1.test@example.org
+  - B：下屬測試
+  - C：GRP-REC
+  - D：收案組
+  - E：收案專員
+  - F：mgr.test@example.org
+  - G：主管測試
+
+  判斷關鍵：要有其他人的 F 主管信箱 等於這位主管的 email
+
+  ## STAFF
+
+  ### Sheet 1
+
+  - A：staff.test@example.org
+  - B：一般員工測試
+  - C：GRP-REC
+  - D：收案組
+
+  ### Sheet 3
+
+  - A：staff.test@example.org
+  - B：一般員工測試
+  - C：GRP-REC
+  - D：收案組
+  - E：專員
+  - F：填主管信箱
+  - G：填主管姓名
+
+  判斷關鍵：不符合 ADMIN / HR / AUDITOR / MGR / EXTERNAL 時，預設就是 STAFF
+
+  ## EXTERNAL
+
+  ### Sheet 1
+
+  - A：ext.vendor@example.org
+  - B：外部測試
+  - C：PARTNER-SYS
+  - D：系統開發外包廠商
+
+  ### Sheet 3
+
+  ## 最重要的避免事項
+
+  如果你要測某個特定角色，不要誤填到更高優先級條件：
+  - 測 MGR 時，C 所屬組別代碼 不要是 GRP-ADMIN、GRP-PLAN，也不要含 TF-GRP-AUDIT
+  - 測 STAFF 時，不要讓別人的 F 主管信箱 指向他，否則會變成 MGR

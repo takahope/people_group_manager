@@ -37,23 +37,26 @@ const SHEET_NAMES = {
  */
 function doGet(e) {
   try {
-    const userInfo = AuthService.getCurrentUser();
+    const userInfoResult = parseServiceResponse(AuthService.getCurrentUser());
 
     // 身份驗證失敗：回傳無權限頁面
-    if (!userInfo.success) {
-      return buildErrorPage('無法識別您的身份，請確認您已登入組織 Google 帳號。');
+    if (!userInfoResult.success) {
+      Logger.log('doGet 使用者驗證失敗：' + (userInfoResult.error || '未知錯誤'));
+      return buildErrorPage(
+        userInfoResult.error || '無法識別您的身份，請確認您已登入組織 Google 帳號。'
+      );
     }
 
     // 回傳主殼層，並將使用者資訊傳遞給前端
     const template = HtmlService.createTemplateFromFile('index');
-    template.userInfo = JSON.stringify(userInfo.data);
+    template.userInfo = JSON.stringify(userInfoResult.data);
     return template.evaluate()
       .setTitle('HR 管理系統')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
   } catch (error) {
-    Logger.log('doGet 錯誤：' + error.message);
+    Logger.log('doGet 錯誤：' + (error.stack || error.message));
     return buildErrorPage('系統發生錯誤，請稍後再試。');
   }
 }
@@ -113,6 +116,13 @@ function buildErrorPage(message) {
  * @returns {Spreadsheet}
  */
 function getSpreadsheet() {
+  const active = getBoundSpreadsheet_();
+  if (active) return active;
+
+  if (!SPREADSHEET_ID || SPREADSHEET_ID === 'YOUR_SPREADSHEET_ID_HERE') {
+    throw new Error('此專案未綁定 Google Sheet，且尚未設定有效的 SPREADSHEET_ID');
+  }
+
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
@@ -147,4 +157,33 @@ function successResponse(data) {
  */
 function errorResponse(message) {
   return JSON.stringify({ success: false, error: message });
+}
+
+/**
+ * 將服務層回傳值標準化為物件。
+ *
+ * 供 doGet 這類伺服器端直接呼叫共用函式使用，避免把 JSON 字串誤當物件。
+ * @param {string|Object} result
+ * @returns {{success:boolean, data?:*, error?:string}}
+ */
+function parseServiceResponse(result) {
+  if (typeof result === 'string') {
+    return JSON.parse(result);
+  }
+  return result;
+}
+
+/**
+ * 優先取得綁定於目前 Apps Script 專案的 Spreadsheet。
+ *
+ * 在容器綁定專案中使用預設 Sheet；獨立專案則回傳 null，由呼叫者決定 fallback。
+ * @returns {Spreadsheet|null}
+ */
+function getBoundSpreadsheet_() {
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet() || null;
+  } catch (error) {
+    Logger.log('getBoundSpreadsheet_ 無法取得綁定試算表：' + error.message);
+    return null;
+  }
 }
