@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HR 管理系統</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+  <!-- ==========================================
+       頂部導覽列
+  =========================================== -->
+  <header class="top-nav" role="banner">
+    <button class="hamburger" id="hamburgerBtn" aria-label="開啟選單" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="top-nav__brand">
+      <svg class="top-nav__logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <span class="top-nav__title">HR 管理系統</span>
+    </div>
+    <div class="top-nav__user" id="userInfo" aria-live="polite">
+      <span class="user-name" id="userName">載入中...</span>
+      <span class="role-badge" id="roleBadge"></span>
+      <button class="btn btn--ghost btn--sm" id="logoutBtn">登出</button>
+    </div>
+  </header>
+
+  <!-- ==========================================
+       主體容器
+  =========================================== -->
+  <div class="app-layout">
+
+    <!-- 左側選單 -->
+    <nav class="side-nav" id="sideNav" role="navigation" aria-label="功能選單">
+      <ul class="nav-list" id="navList">
+        <!-- 選單項目由 router.js 依角色動態產生 -->
+      </ul>
+    </nav>
+
+    <!-- 遮罩（手機版） -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- 主要內容區 -->
+    <main class="main-content" id="mainContent" role="main" aria-live="polite">
+      <div class="page-loading" id="pageLoading">
+        <div class="spinner spinner--lg"></div>
+        <p>載入頁面中...</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast 通知容器 -->
+  <div class="toast-container" id="toastContainer" role="alert" aria-atomic="true"></div>
+
+  <!-- 確認 Modal -->
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal__header">
+        <h2 class="modal__title" id="modalTitle">確認操作</h2>
+        <button class="modal__close" id="modalClose" aria-label="關閉">&times;</button>
+      </div>
+      <div class="modal__body" id="modalBody"></div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" id="modalCancelBtn">取消</button>
+        <button class="btn btn--danger" id="modalConfirmBtn">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 使用者資料（由 GAS 注入） -->
+  <script>
+    // GAS 模板注入使用者資訊（在頁面初始化前即可用）
+    window.__USER_INFO__ = <?!= userInfo ?>;
+  </script>
+
+  <!-- 前端 JS（依序載入） -->
+  <?!= include('js/api'); ?>
+  <?!= include('js/components'); ?>
+  <?!= include('js/router'); ?>
+</body>
+</html>

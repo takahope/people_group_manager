@@ -1,0 +1,433 @@
+<script>
+/**
+ * components.js — 可複用 UI 元件
+ * 
+ * 設計原則：
+ * - 每個元件函式只做「渲染」，不包含 API 呼叫或業務邏輯
+ * - 回傳 DOM 元素或 HTML 字串，由呼叫方決定如何使用
+ */
+
+const Components = (() => {
+
+  // =============================================
+  // Toast 通知
+  // =============================================
+
+  /**
+   * 顯示右下角 Toast 通知，3 秒後自動消失
+   * 
+   * @param {string} msg  - 訊息內容
+   * @param {'success'|'error'|'warning'|'info'} type
+   */
+  function showToast(msg, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${type}`;
+    toast.innerHTML = `<span>${icons[type] || 'ℹ'}</span><span>${escapeHtml(msg)}</span>`;
+    container.appendChild(toast);
+
+    // 3 秒後淡出並移除
+    setTimeout(() => {
+      toast.classList.add('toast--exiting');
+      toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    }, 3000);
+  }
+
+  // =============================================
+  // 確認 Modal
+  // =============================================
+
+  /**
+   * 顯示確認 Modal，使用者確認後執行 onConfirm
+   * 
+   * @param {string}   title     - 對話框標題
+   * @param {string}   body      - 說明文字（HTML 字串）
+   * @param {Function} onConfirm - 確認後的 callback
+   * @param {string}   [confirmText='確認刪除'] - 確認按鈕文字
+   */
+  function showModal(title, body, onConfirm, confirmText = '確認') {
+    const backdrop = document.getElementById('modalBackdrop');
+    const titleEl  = document.getElementById('modalTitle');
+    const bodyEl   = document.getElementById('modalBody');
+    const confirmBtn = document.getElementById('modalConfirmBtn');
+    const cancelBtn  = document.getElementById('modalCancelBtn');
+    const closeBtn   = document.getElementById('modalClose');
+
+    titleEl.textContent = title;
+    bodyEl.innerHTML = body;
+    backdrop.hidden = false;
+
+    // 清除先前的事件監聽（避免重複綁定）
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+    newConfirmBtn.textContent = confirmText;
+    newConfirmBtn.onclick = () => {
+      hideModal();
+      onConfirm();
+    };
+
+    const closeModal = () => hideModal();
+    cancelBtn.onclick = closeModal;
+    closeBtn.onclick  = closeModal;
+    backdrop.onclick = (e) => { if (e.target === backdrop) closeModal(); };
+
+    // Escape 鍵關閉
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', onEsc); }
+    });
+  }
+
+  function hideModal() {
+    document.getElementById('modalBackdrop').hidden = true;
+  }
+
+  // =============================================
+  // Spinner
+  // =============================================
+
+  /**
+   * 在指定容器內顯示 Loading Spinner
+   * 原有內容以 data 屬性保存，待 hideSpinner 時還原
+   * 
+   * @param {string} elId - 容器元素 ID
+   */
+  function showSpinner(elId) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.dataset.prevHtml = el.innerHTML;
+    el.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+  }
+
+  /**
+   * 移除 Spinner，還原原有內容
+   * 
+   * @param {string} elId
+   */
+  function hideSpinner(elId) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (el.dataset.prevHtml !== undefined) {
+      el.innerHTML = el.dataset.prevHtml;
+      delete el.dataset.prevHtml;
+    }
+  }
+
+  // =============================================
+  // 資料表格（DataTable）
+  // =============================================
+
+  /**
+   * 渲染可排序、可搜尋的資料表格
+   * 
+   * @param {Object}   config - { columns: [{key, label, render?}], onRowClick? }
+   * @param {Array}    data
+   * @param {string}   containerId - 渲染至此容器
+   */
+  function DataTable(config, data, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (data.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state__icon">📭</div>
+          <p>目前無資料</p>
+        </div>`;
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'data-table';
+
+    // 表頭
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    let currentSort = { key: null, asc: true };
+
+    config.columns.forEach(col => {
+      const th = document.createElement('th');
+      th.textContent = col.label;
+      th.dataset.key = col.key;
+      th.onclick = () => {
+        const asc = (currentSort.key === col.key) ? !currentSort.asc : true;
+        currentSort = { key: col.key, asc };
+        sortTable(col.key, asc, tbody, config, currentData);
+        // 更新排序指示
+        headerRow.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
+        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+      };
+      headerRow.appendChild(th);
+    });
+    if (config.actions) {
+      const th = document.createElement('th');
+      th.textContent = '操作';
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // 表體
+    const tbody = document.createElement('tbody');
+    let currentData = [...data];
+    renderRows(tbody, currentData, config);
+    table.appendChild(tbody);
+
+    // 包裝
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrapper';
+    wrapper.appendChild(table);
+    container.innerHTML = '';
+    container.appendChild(wrapper);
+  }
+
+  function renderRows(tbody, data, config) {
+    tbody.innerHTML = '';
+    if (data.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = config.columns.length + (config.actions ? 1 : 0);
+      td.innerHTML = '<div class="empty-state" style="padding:1.5rem"><p>無符合結果</p></div>';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+
+    data.forEach(row => {
+      const tr = document.createElement('tr');
+      if (config.onRowClick) {
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => config.onRowClick(row);
+      }
+      config.columns.forEach(col => {
+        const td = document.createElement('td');
+        td.innerHTML = col.render ? col.render(row[col.key], row) : escapeHtml(String(row[col.key] ?? ''));
+        // RACI A 欄多角色警示
+        if (col.key === 'A' && row.A && row.A.includes(',')) td.classList.add('raci-a--multi');
+        tr.appendChild(td);
+      });
+      if (config.actions) {
+        const td = document.createElement('td');
+        td.innerHTML = config.actions(row);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  }
+
+  function sortTable(key, asc, tbody, config, data) {
+    const sorted = [...data].sort((a, b) => {
+      const va = String(a[key] ?? '');
+      const vb = String(b[key] ?? '');
+      return asc ? va.localeCompare(vb, 'zh-Hant') : vb.localeCompare(va, 'zh-Hant');
+    });
+    renderRows(tbody, sorted, config);
+  }
+
+  // =============================================
+  // 組織樹節點（OrgNode）
+  // =============================================
+
+  /**
+   * 遞迴渲染組織樹節點，支援展開/收合
+   * 
+   * @param {Object} node  - 含 children 的樹節點
+   * @param {number} depth - 層級深度
+   * @returns {HTMLElement}
+   */
+  function OrgNode(node, depth = 0) {
+    const div = document.createElement('div');
+    div.className = 'org-node';
+
+    const hasChildren = node.children && node.children.length > 0;
+    const uid = 'org-' + node.code;
+
+    const header = document.createElement('div');
+    header.className = 'org-node__header';
+    header.innerHTML = `
+      <span class="org-node__toggle">${hasChildren ? '▶' : ''}</span>
+      <span class="org-node__code">${escapeHtml(node.code)}</span>
+      <span class="org-node__name">${escapeHtml(node.name)}${node.alias ? ` <small style="color:var(--color-text-sub)">／${escapeHtml(node.alias)}</small>` : ''}</span>
+      ${node.managerName ? `<span class="org-node__mgr">👤 ${escapeHtml(node.managerName)}</span>` : ''}
+      <span class="badge badge--neutral">${orgTypeBadge(node.type)}</span>
+    `;
+
+    const childrenDiv = document.createElement('div');
+    childrenDiv.className = 'org-node__children';
+    childrenDiv.id = uid;
+
+    if (hasChildren) {
+      childrenDiv.hidden = depth > 1; // 深度 > 1 預設收合
+      const toggle = header.querySelector('.org-node__toggle');
+
+      header.onclick = () => {
+        const isHidden = childrenDiv.hidden;
+        childrenDiv.hidden = !isHidden;
+        toggle.textContent = isHidden ? '▼' : '▶';
+      };
+
+      node.children.forEach(child => childrenDiv.appendChild(OrgNode(child, depth + 1)));
+    }
+
+    div.appendChild(header);
+    div.appendChild(childrenDiv);
+    return div;
+  }
+
+  function orgTypeBadge(type) {
+    const map = { ORG: '行政', TF: '任務', PARTNER: '合作', GOV: '機關' };
+    return map[type] || type;
+  }
+
+  // =============================================
+  // 人員卡片（PersonCard）
+  // =============================================
+
+  /**
+   * @param {Object} person      - 人員資料
+   * @param {Array}  assignments - 職務配置陣列
+   * @returns {string} HTML 字串
+   */
+  function PersonCard(person, assignments) {
+    const isConcurrent = assignments.length > 1;
+    const titles = assignments.map(a => `${escapeHtml(a.orgName)} — ${escapeHtml(a.title)}`).join('<br>');
+    return `
+      <div class="card" style="margin-bottom:.75rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+          <div>
+            <strong>${escapeHtml(person.name)}</strong>
+            ${isConcurrent ? '<span class="badge badge--warning" style="margin-left:.5rem">兼任</span>' : ''}
+          </div>
+          <span style="font-size:.8rem;color:var(--color-text-sub)">${escapeHtml(person.email)}</span>
+        </div>
+        <div style="font-size:.85rem;color:var(--color-text-sub)">${titles || '暫無職務配置'}</div>
+      </div>`;
+  }
+
+  // =============================================
+  // RACI 列（RaciRow）
+  // =============================================
+
+  /**
+   * @param {Object} raciItem
+   * @param {Map}    roleMap - roleCode → roleLabel
+   * @returns {string} <tr> HTML 字串
+   */
+  function RaciRow(raciItem, roleMap) {
+    const aMulti = raciItem.A && raciItem.A.split(',').length > 1;
+    return `
+      <tr>
+        <td>${escapeHtml(raciItem.taskCode)}</td>
+        <td>${escapeHtml(raciItem.itemCode)}</td>
+        <td>${escapeHtml(raciItem.itemName)}</td>
+        <td>${renderRoleCodes(raciItem.R, roleMap)}</td>
+        <td class="${aMulti ? 'raci-a--multi' : ''}">${renderRoleCodes(raciItem.A, roleMap)}${aMulti ? ' ⚠' : ''}</td>
+        <td>${renderRoleCodes(raciItem.C, roleMap)}</td>
+        <td>${renderRoleCodes(raciItem.I, roleMap)}</td>
+        <td style="color:var(--color-text-sub);font-size:.8rem">${escapeHtml(raciItem.note || '')}</td>
+      </tr>`;
+  }
+
+  function renderRoleCodes(value, roleMap) {
+    if (!value) return '<span style="color:var(--color-disabled)">—</span>';
+    return value.split(',').map(code => {
+      const trimmed = code.trim();
+      const label = roleMap && roleMap.get(trimmed);
+      return `<span class="badge badge--primary" title="${label || ''}">${escapeHtml(trimmed)}</span>`;
+    }).join(' ');
+  }
+
+  // =============================================
+  // 稽核結果面板（AuditResultPanel）
+  // =============================================
+
+  /**
+   * @param {Object} results - runFullAudit() 回傳的 data
+   * @param {string} containerId
+   */
+  function AuditResultPanel(results, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const { summary, results: checks } = results;
+    const passRate = Math.round((summary.passedChecks / summary.totalChecks) * 100);
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card__header"><h3 class="card__title">稽核總覽</h3></div>
+        <div style="display:flex;gap:2rem;flex-wrap:wrap">
+          <div><div style="font-size:.8rem;color:var(--color-text-sub)">驗證項目</div><div style="font-size:1.5rem;font-weight:700">${summary.totalChecks}</div></div>
+          <div><div style="font-size:.8rem;color:var(--color-success)">通過</div><div style="font-size:1.5rem;font-weight:700;color:var(--color-success)">${summary.passedChecks}</div></div>
+          <div><div style="font-size:.8rem;color:var(--color-danger)">異常</div><div style="font-size:1.5rem;font-weight:700;color:var(--color-danger)">${summary.failedChecks}</div></div>
+          <div><div style="font-size:.8rem;color:var(--color-danger)">Critical</div><div style="font-size:1.5rem;font-weight:700;color:var(--color-danger)">${summary.criticalCount}</div></div>
+        </div>
+        <div class="progress-bar" style="margin-top:1rem">
+          <div class="progress-bar__fill" style="width:${passRate}%;background:${passRate===100?'var(--color-success)':'var(--color-warning)'}"></div>
+        </div>
+        <div style="font-size:.8rem;color:var(--color-text-sub);margin-top:.25rem">通過率 ${passRate}%</div>
+      </div>
+      <div id="auditChecks"></div>
+    `;
+
+    const checksDiv = document.getElementById('auditChecks');
+    checks.forEach(check => {
+      const el = document.createElement('div');
+      el.className = 'audit-check';
+      el.innerHTML = `
+        <div class="audit-check__header" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden">
+          <span>${check.passed ? '✅' : '❌'}</span>
+          <span class="audit-check__label">${escapeHtml(check.label)}</span>
+          <span class="audit-check__count">${check.passed ? '全部通過' : `${check.issueCount} 項異常`}</span>
+          <span style="color:var(--color-text-sub);font-size:.75rem">▼</span>
+        </div>
+        <div class="audit-check__body" ${check.passed ? 'hidden' : ''}>
+          ${check.issues.map(issue => `
+            <div class="audit-issue audit-issue--${issue.severity === 'Critical' ? 'critical' : 'warning'}">
+              <strong>${issue.severity}</strong>：${escapeHtml(issue.message || '')}
+              ${issue.itemCode ? `<code style="display:block;font-size:.78rem;margin-top:.25rem">${escapeHtml(issue.itemCode)}</code>` : ''}
+            </div>`).join('')}
+        </div>
+      `;
+      checksDiv.appendChild(el);
+    });
+  }
+
+  // =============================================
+  // 通用輔助
+  // =============================================
+
+  /** XSS 防護：轉義 HTML 特殊字元 */
+  function escapeHtml(str) {
+    if (typeof str !== 'string') return String(str ?? '');
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+              .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+  }
+
+  /** 格式化日期時間 */
+  function formatDateTime(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (isNaN(d)) return String(value);
+    return d.toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit',
+                                        hour:'2-digit', minute:'2-digit' });
+  }
+
+  return {
+    showToast,
+    showModal,
+    hideModal,
+    showSpinner,
+    hideSpinner,
+    DataTable,
+    OrgNode,
+    PersonCard,
+    RaciRow,
+    AuditResultPanel,
+    escapeHtml,
+    formatDateTime,
+  };
+})();
+</script>

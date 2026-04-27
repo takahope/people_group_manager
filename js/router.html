@@ -1,0 +1,808 @@
+<script>
+/**
+ * router.js — Hash-based SPA 路由系統
+ * 
+ * 設計原則：
+ * - 路由設定集中管理（ROUTES 陣列），新增頁面只需新增一筆，無需修改其他邏輯
+ * - 依角色動態過濾可見頁面，前端 UI 與後端權限兩層把關
+ * - 不依賴任何框架，純 Vanilla JS
+ */
+
+const Router = (() => {
+
+  // =============================================
+  // 路由設定（新增頁面時只需在此新增一筆）
+  // =============================================
+
+  /**
+   * @type {Array<{
+   *   hash:     string,          // URL hash
+   *   label:    string,          // 選單顯示名稱
+   *   icon:     string,          // SVG path 或 emoji
+   *   section:  string,          // 選單分區標題
+   *   feature:  string,          // 權限檢查 key（對應 AuthService PERMISSION_MAP）
+   *   loader:   Function,        // 頁面載入函式
+   * }>}
+   */
+  const ROUTES = [
+    {
+      hash: '#/dashboard', label: '儀表板', icon: '📊', section: '總覽',
+      feature: 'dashboard.full,dashboard.dept,dashboard.personal',
+      loader: Pages.loadDashboard,
+    },
+    {
+      hash: '#/personnel', label: '人員管理', icon: '👥', section: '人事管理',
+      feature: 'personnel.read.all,personnel.read.dept,personnel.read.self',
+      loader: Pages.loadPersonnel,
+    },
+    {
+      hash: '#/assignments', label: '職務配置', icon: '🗂️', section: '人事管理',
+      feature: 'assignment.read.all',
+      loader: Pages.loadAssignments,
+    },
+    {
+      hash: '#/org', label: '組織架構', icon: '🌳', section: '人事管理',
+      feature: 'org.read',
+      loader: Pages.loadOrg,
+    },
+    {
+      hash: '#/stations', label: '駐站管理員', icon: '🏥', section: '人事管理',
+      feature: 'station.read',
+      loader: Pages.loadStations,
+    },
+    {
+      hash: '#/raci', label: 'RACI 查詢', icon: '📋', section: '資安管理',
+      feature: 'raci.read',
+      loader: Pages.loadRaci,
+    },
+    {
+      hash: '#/raci/me', label: '我的責任', icon: '🙋', section: '資安管理',
+      feature: 'raci.read',
+      loader: Pages.loadMyRaci,
+    },
+    {
+      hash: '#/audit', label: '稽核驗證', icon: '🔍', section: '稽核',
+      feature: 'audit.run',
+      loader: Pages.loadAudit,
+    },
+  ];
+
+  let currentUser = null;
+  let visibleRoutes = [];
+
+  // =============================================
+  // 初始化
+  // =============================================
+
+  /**
+   * 初始化路由系統
+   * 1. 讀取注入的使用者資訊
+   * 2. 依角色過濾可見路由
+   * 3. 渲染側邊選單
+   * 4. 監聽 hashchange
+   * 5. 導向當前 hash（或預設首頁）
+   */
+  async function init() {
+    try {
+      // 使用 GAS 注入的使用者資訊（避免額外 API 呼叫）
+      currentUser = window.__USER_INFO__;
+      updateUserDisplay(currentUser);
+
+      // 過濾可見路由（依角色）
+      visibleRoutes = await filterVisibleRoutes(ROUTES);
+      renderSideNav(visibleRoutes);
+
+      // 監聽 hash 變更
+      window.addEventListener('hashchange', onHashChange);
+
+      // 初始路由
+      const hash = location.hash || '#/dashboard';
+      navigateTo(hash);
+
+      // 漢堡選單（手機版）
+      initMobileMenu();
+
+      // 登出按鈕
+      document.getElementById('logoutBtn').onclick = () => {
+        if (confirm('確認要登出嗎？')) google.script.host.close();
+      };
+
+    } catch (error) {
+      console.error('Router 初始化失敗：', error);
+      Components.showToast('頁面初始化失敗，請重新整理', 'error');
+    }
+  }
+
+  // =============================================
+  // 路由邏輯
+  // =============================================
+
+  function onHashChange() {
+    navigateTo(location.hash);
+  }
+
+  /**
+   * 導向指定 hash 對應的頁面
+   * Guard Clause：找不到路由 → 顯示 404 訊息
+   * 
+   * @param {string} hash
+   */
+  async function navigateTo(hash) {
+    // 標準化：移除尾部斜線
+    const normalizedHash = hash.replace(/\/$/, '') || '#/dashboard';
+
+    // 找完全匹配，若無則找前綴匹配（用於子路由如 #/raci/me）
+    const route = visibleRoutes.find(r => r.hash === normalizedHash)
+                || visibleRoutes.find(r => normalizedHash.startsWith(r.hash + '/'));
+
+    if (!route) {
+      renderNotFound(normalizedHash);
+      return;
+    }
+
+    // 更新 URL hash（不觸發 hashchange 事件）
+    if (location.hash !== normalizedHash) {
+      history.replaceState(null, '', normalizedHash);
+    }
+
+    // 標記當前選單項
+    highlightNavItem(normalizedHash);
+
+    // 載入頁面內容
+    const mainContent = document.getElementById('mainContent');
+    try {
+      Components.showSpinner('mainContent');
+      await route.loader(mainContent, currentUser);
+    } catch (error) {
+      console.error('頁面載入失敗：', error);
+      mainContent.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state__icon">⚠️</div>
+          <p>頁面載入失敗：${Components.escapeHtml(error.message)}</p>
+        </div>`;
+    }
+  }
+
+  // =============================================
+  // 側邊選單渲染
+  // =============================================
+
+  /**
+   * 依可見路由渲染左側選單
+   * 依 section 分組，每個 section 加上小標題
+   * 
+   * @param {Array} routes
+   */
+  function renderSideNav(routes) {
+    const navList = document.getElementById('navList');
+    if (!navList) return;
+
+    navList.innerHTML = '';
+    const sections = groupBySection(routes);
+
+    sections.forEach(({ section, items }) => {
+      // Section 標籤
+      const sectionEl = document.createElement('li');
+      sectionEl.className = 'nav-section-label';
+      sectionEl.textContent = section;
+      navList.appendChild(sectionEl);
+
+      // 路由項目
+      items.forEach(route => {
+        const li = document.createElement('li');
+        li.className = 'nav-item';
+        li.innerHTML = `
+          <a href="${route.hash}" data-hash="${route.hash}">
+            <span class="nav-item__icon">${route.icon}</span>
+            <span>${Components.escapeHtml(route.label)}</span>
+          </a>`;
+        navList.appendChild(li);
+      });
+    });
+  }
+
+  function groupBySection(routes) {
+    const map = new Map();
+    routes.forEach(r => {
+      if (!map.has(r.section)) map.set(r.section, []);
+      map.get(r.section).push(r);
+    });
+    return [...map.entries()].map(([section, items]) => ({ section, items }));
+  }
+
+  function highlightNavItem(hash) {
+    document.querySelectorAll('.nav-item a').forEach(a => {
+      a.classList.toggle('active', a.dataset.hash === hash);
+    });
+  }
+
+  // =============================================
+  // 權限過濾
+  // =============================================
+
+  /**
+   * 依使用者角色過濾可見路由
+   * feature 欄位支援逗號分隔（OR 邏輯：任一滿足即可見）
+   * 
+   * @param {Array} routes
+   * @returns {Promise<Array>}
+   */
+  async function filterVisibleRoutes(routes) {
+    const role = currentUser?.role;
+    if (!role) return [];
+
+    const permChecks = await Promise.all(
+      routes.map(route =>
+        checkAnyPermission(route.feature.split(',').map(f => f.trim()))
+      )
+    );
+    return routes.filter((_, i) => permChecks[i]);
+  }
+
+  /**
+   * 檢查是否有任一 feature 的權限（OR 邏輯）
+   * 
+   * @param {Array<string>} features
+   * @returns {Promise<boolean>}
+   */
+  async function checkAnyPermission(features) {
+    for (const feature of features) {
+      try {
+        const result = await API.checkPermission(feature);
+        if (result === true) return true;
+      } catch (e) { /* 繼續檢查下一個 */ }
+    }
+    return false;
+  }
+
+  // =============================================
+  // 使用者顯示
+  // =============================================
+
+  function updateUserDisplay(user) {
+    const nameEl  = document.getElementById('userName');
+    const badgeEl = document.getElementById('roleBadge');
+    if (!user) return;
+
+    if (nameEl)  nameEl.textContent = user.name || user.email;
+    if (badgeEl) {
+      badgeEl.textContent = user.roleLabel || user.role;
+      badgeEl.className = 'role-badge badge ' + roleBadgeClass(user.role);
+    }
+  }
+
+  function roleBadgeClass(role) {
+    const map = {
+      'ROLE-APP-ADMIN':    'badge--danger',
+      'ROLE-APP-HR':       'badge--primary',
+      'ROLE-APP-AUDITOR':  'badge--warning',
+      'ROLE-APP-MGR':      'badge--success',
+      'ROLE-APP-STAFF':    'badge--neutral',
+      'ROLE-APP-EXTERNAL': 'badge--neutral',
+    };
+    return map[role] || 'badge--neutral';
+  }
+
+  // =============================================
+  // 手機版漢堡選單
+  // =============================================
+
+  function initMobileMenu() {
+    const hamburger = document.getElementById('hamburgerBtn');
+    const sideNav   = document.getElementById('sideNav');
+    const overlay   = document.getElementById('overlay');
+    if (!hamburger || !sideNav || !overlay) return;
+
+    const open  = () => { sideNav.classList.add('is-open'); overlay.classList.add('is-visible'); hamburger.setAttribute('aria-expanded','true'); };
+    const close = () => { sideNav.classList.remove('is-open'); overlay.classList.remove('is-visible'); hamburger.setAttribute('aria-expanded','false'); };
+
+    hamburger.onclick = () => sideNav.classList.contains('is-open') ? close() : open();
+    overlay.onclick   = close;
+
+    // 點選選單項目後自動關閉
+    sideNav.addEventListener('click', e => {
+      if (e.target.closest('a')) close();
+    });
+  }
+
+  // =============================================
+  // 404 頁面
+  // =============================================
+
+  function renderNotFound(hash) {
+    const main = document.getElementById('mainContent');
+    if (main) {
+      main.innerHTML = `
+        <div class="empty-state" style="min-height:400px">
+          <div class="empty-state__icon">🔍</div>
+          <h2>找不到頁面</h2>
+          <p>路由 <code>${Components.escapeHtml(hash)}</code> 不存在或您無權限存取。</p>
+          <a href="#/dashboard" class="btn btn--primary" style="margin-top:1rem">返回儀表板</a>
+        </div>`;
+    }
+  }
+
+  // =============================================
+  // Public API
+  // =============================================
+
+  return { init, navigateTo };
+
+})();
+
+// =============================================
+// 頁面載入函式命名空間
+// =============================================
+
+/**
+ * Pages — 每個路由對應的頁面載入函式
+ * 
+ * 職責：呼叫 API、渲染 HTML 到 container
+ * 設計：每個 load* 函式獨立，互不依賴
+ */
+const Pages = {
+
+  // ========================
+  // 儀表板
+  // ========================
+  async loadDashboard(container, user) {
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>📊 儀表板</h1>
+      </div>
+      <div class="stat-grid" id="statGrid">
+        ${['人員統計','組織分佈','兼任人員','RACI 覆蓋率','稽核警示','近期異動']
+          .map((_, i) => `<div class="stat-card"><div class="stat-card__label">載入中...</div><div class="stat-card__value">—</div></div>`).join('')}
+      </div>
+      <div id="dashboardLogs" class="card"><div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div></div>
+    `;
+
+    try {
+      const [personnel, logs] = await Promise.all([
+        API.getAllPersonnel(),
+        API.getRecentLogs().catch(() => []),
+      ]);
+
+      const total = personnel.length;
+      const statGrid = document.getElementById('statGrid');
+      statGrid.innerHTML = `
+        <div class="stat-card"><div class="stat-card__label">在職總人數</div><div class="stat-card__value">${total}</div></div>
+        <div class="stat-card"><div class="stat-card__label">系統版本</div><div class="stat-card__value" style="font-size:1rem">v1.0</div></div>
+        <div class="stat-card"><div class="stat-card__label">身份角色</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(user?.roleLabel || '—')}</div></div>
+        <div class="stat-card"><div class="stat-card__label">登入帳號</div><div class="stat-card__value" style="font-size:.9rem">${Components.escapeHtml(user?.email || '—')}</div></div>
+      `;
+
+      const logsDiv = document.getElementById('dashboardLogs');
+      if (logs.length === 0) {
+        logsDiv.innerHTML = '<div class="card__header"><h3 class="card__title">近期異動紀錄</h3></div><div class="empty-state"><p>尚無操作記錄</p></div>';
+        return;
+      }
+      const rows = logs.map(l => `
+        <tr>
+          <td>${Components.formatDateTime(l.timestamp)}</td>
+          <td>${Components.escapeHtml(l.operator)}</td>
+          <td><span class="badge badge--neutral">${Components.escapeHtml(l.action)}</span></td>
+          <td>${Components.escapeHtml(l.target)}</td>
+        </tr>`).join('');
+      logsDiv.innerHTML = `
+        <div class="card__header"><h3 class="card__title">近期異動紀錄</h3></div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead><tr><th>時間</th><th>操作者</th><th>類型</th><th>對象</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    } catch (err) {
+      API.handleError(err);
+    }
+  },
+
+  // ========================
+  // 人員管理
+  // ========================
+  async loadPersonnel(container, user) {
+    const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
+    const canDelete = user?.role === 'ROLE-APP-ADMIN';
+
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>👥 人員管理</h1>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <div class="search-bar">
+            <input type="search" id="personnelSearch" class="search-bar__input" placeholder="搜尋姓名、信箱…">
+            <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </div>
+          ${canWrite ? '<button class="btn btn--primary" id="addPersonBtn">＋ 新增人員</button>' : ''}
+        </div>
+      </div>
+      <div id="personnelTable">
+        <div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>
+      </div>
+    `;
+
+    try {
+      let data = await API.getAllPersonnel();
+      let filtered = data;
+
+      const renderTable = () => {
+        Components.DataTable({
+          columns: [
+            { key: 'email', label: '信箱' },
+            { key: 'name',  label: '姓名' },
+            { key: 'assetGroupCode', label: '資產分組代號' },
+            { key: 'assetGroupName', label: '資產分組名稱' },
+          ],
+          actions: canWrite ? (row) => `
+            <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
+            ${canDelete ? `<button class="btn btn--danger btn--sm" style="margin-left:.25rem" onclick="Pages._deletePerson('${row.email}','${row.name}')">刪除</button>` : ''}
+          ` : null,
+          onRowClick: null,
+        }, filtered, 'personnelTable');
+      };
+      renderTable();
+
+      // 即時搜尋
+      document.getElementById('personnelSearch').addEventListener('input', e => {
+        const q = e.target.value.toLowerCase();
+        filtered = data.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          p.email.toLowerCase().includes(q) ||
+          (p.assetGroupName || '').toLowerCase().includes(q)
+        );
+        renderTable();
+      });
+
+      if (canWrite) {
+        document.getElementById('addPersonBtn').onclick = () => Pages._showPersonForm(null, () => Pages.loadPersonnel(container, user));
+      }
+    } catch (err) {
+      API.handleError(err);
+    }
+  },
+
+  // 人員表單（新增/編輯）
+  _showPersonForm(existingPerson, onSuccess) {
+    const isEdit = !!existingPerson;
+    const body = `
+      <div class="form-group">
+        <label class="form-label required">信箱</label>
+        <input type="email" class="form-control" id="pEmail" value="${existingPerson?.email || ''}" ${isEdit ? 'readonly' : ''}>
+      </div>
+      <div class="form-group">
+        <label class="form-label required">姓名</label>
+        <input type="text" class="form-control" id="pName" value="${existingPerson?.name || ''}" maxlength="50">
+      </div>
+      <div class="form-group">
+        <label class="form-label required">資訊資產邏輯分組代號</label>
+        <input type="text" class="form-control" id="pAssetCode" value="${existingPerson?.assetGroupCode || ''}">
+      </div>
+      <div class="form-group">
+        <label class="form-label required">資訊資產邏輯分組名稱</label>
+        <input type="text" class="form-control" id="pAssetName" value="${existingPerson?.assetGroupName || ''}">
+      </div>`;
+
+    Components.showModal(isEdit ? '編輯人員' : '新增人員', body, async () => {
+      const obj = {
+        email:         document.getElementById('pEmail').value.trim(),
+        name:          document.getElementById('pName').value.trim(),
+        assetGroupCode: document.getElementById('pAssetCode').value.trim(),
+        assetGroupName: document.getElementById('pAssetName').value.trim(),
+      };
+      try {
+        if (isEdit) { await API.updatePerson(existingPerson.email, obj); }
+        else        { await API.addPerson(obj); }
+        Components.showToast(isEdit ? '人員更新成功' : '人員新增成功', 'success');
+        onSuccess();
+      } catch (err) { API.handleError(err); }
+    }, isEdit ? '儲存' : '新增');
+  },
+
+  _editPerson(email) {
+    API.getAllPersonnel().then(data => {
+      const person = data.find(p => p.email === email);
+      if (person) Pages._showPersonForm(person, () => location.reload());
+    });
+  },
+
+  _deletePerson(email, name) {
+    Components.showModal('確認刪除人員',
+      `<p>確認要刪除 <strong>${Components.escapeHtml(name)}</strong>（${Components.escapeHtml(email)}）嗎？</p>
+       <p style="color:var(--color-danger);margin-top:.5rem">⚠ 此操作無法復原，請確認此人員無任何職務配置。</p>`,
+      async () => {
+        try {
+          await API.deletePerson(email);
+          Components.showToast('人員刪除成功', 'success');
+          location.reload();
+        } catch (err) { API.handleError(err); }
+      }, '確認刪除');
+  },
+
+  // ========================
+  // 職務配置
+  // ========================
+  async loadAssignments(container, user) {
+    container.innerHTML = `
+      <div class="page-header"><h1>🗂️ 職務配置管理</h1></div>
+      <div class="card" style="margin-bottom:1rem">
+        <p style="color:var(--color-text-sub);font-size:.875rem">請從下方選擇人員查看其職務配置。</p>
+        <div class="search-bar" style="margin-top:.75rem;max-width:100%">
+          <input type="search" id="assignSearch" class="search-bar__input" placeholder="輸入 Email 或姓名搜尋人員…">
+          <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        </div>
+      </div>
+      <div id="assignmentResult"></div>`;
+
+    const all = await API.getAllPersonnel().catch(() => []);
+
+    document.getElementById('assignSearch').addEventListener('input', async e => {
+      const q = e.target.value.trim().toLowerCase();
+      if (q.length < 2) return;
+      const matches = all.filter(p => p.email.includes(q) || p.name.includes(q));
+      const resultDiv = document.getElementById('assignmentResult');
+      resultDiv.innerHTML = matches.slice(0, 5).map(p => `
+        <div class="card" style="cursor:pointer;margin-bottom:.5rem" onclick="Pages._loadPersonAssignments('${p.email}','${Components.escapeHtml(p.name)}')">
+          <strong>${Components.escapeHtml(p.name)}</strong>
+          <span style="color:var(--color-text-sub);margin-left:.5rem;font-size:.85rem">${Components.escapeHtml(p.email)}</span>
+        </div>`).join('') || '<p style="color:var(--color-text-sub)">無符合人員</p>';
+    });
+  },
+
+  async _loadPersonAssignments(email, name) {
+    try {
+      const assignments = await API.getAssignments(email);
+      const result = document.getElementById('assignmentResult');
+      result.innerHTML = `<div class="card__header"><h3 class="card__title">📋 ${Components.escapeHtml(name)} 的職務配置</h3></div>` +
+        Components.PersonCard({ email, name }, assignments) +
+        `<div id="assignTable"></div>`;
+
+      Components.DataTable({
+        columns: [
+          { key: 'orgCode', label: '組別代碼' },
+          { key: 'orgName', label: '組別名稱' },
+          { key: 'title',   label: '職稱' },
+          { key: 'managerName', label: '直屬主管' },
+        ],
+      }, assignments, 'assignTable');
+    } catch (err) { API.handleError(err); }
+  },
+
+  // ========================
+  // 組織架構樹
+  // ========================
+  async loadOrg(container) {
+    container.innerHTML = `
+      <div class="page-header"><h1>🌳 組織架構</h1></div>
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap" id="orgTypeTabs">
+        ${['全部','ORG','TF','PARTNER','GOV'].map((t,i) =>
+          `<button class="btn ${i===0?'btn--primary':'btn--ghost'} btn--sm" data-type="${i===0?'':t}">${{ORG:'行政組織',TF:'任務編組',PARTNER:'合作單位',GOV:'外部機關','全部':'全部'}[t]||t}</button>`
+        ).join('')}
+      </div>
+      <div id="orgTreeContainer" class="card"></div>`;
+
+    const renderTree = async (type) => {
+      const treeDiv = document.getElementById('orgTreeContainer');
+      treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+      try {
+        const tree = await API.getOrgTree(type || null);
+        treeDiv.innerHTML = '';
+        if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
+        tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0)));
+      } catch (err) { API.handleError(err); }
+    };
+
+    await renderTree(null);
+
+    document.getElementById('orgTypeTabs').addEventListener('click', async e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      document.querySelectorAll('#orgTypeTabs button').forEach(b => b.className = 'btn btn--ghost btn--sm');
+      btn.className = 'btn btn--primary btn--sm';
+      await renderTree(btn.dataset.type || null);
+    });
+  },
+
+  // ========================
+  // 駐站管理員
+  // ========================
+  async loadStations(container) {
+    container.innerHTML = `
+      <div class="page-header"><h1>🏥 駐站管理員儀表板</h1></div>
+      <div class="search-bar" style="margin-bottom:1rem">
+        <input type="search" id="stationSearch" class="search-bar__input" placeholder="搜尋站長姓名…">
+        <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </div>
+      <div id="stationList"><div class="page-loading"><div class="spinner"></div></div></div>`;
+
+    try {
+      const managers = await API.getStationManagers();
+      let filtered = managers;
+
+      const render = () => {
+        const div = document.getElementById('stationList');
+        div.innerHTML = filtered.length === 0 ? '<div class="empty-state"><p>無符合站長</p></div>' :
+          filtered.map(mgr => `
+            <div class="card" style="margin-bottom:.75rem">
+              <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
+                <strong>${Components.escapeHtml(mgr.name)}</strong>
+                ${mgr.isConcurrent ? '<span class="badge badge--warning">兼任</span>' : '<span class="badge badge--success">專任</span>'}
+                <span style="color:var(--color-text-sub);font-size:.8rem">${Components.escapeHtml(mgr.email)}</span>
+                <span style="color:var(--color-text-sub);font-size:.8rem;margin-left:auto">${Components.escapeHtml(mgr.title)}</span>
+              </div>
+              ${mgr.members.length > 0 ? `
+                <details>
+                  <summary style="cursor:pointer;font-size:.85rem;color:var(--color-text-sub)">展開 ${mgr.members.length} 位下屬</summary>
+                  <ul style="margin-top:.5rem;padding-left:1rem">
+                    ${mgr.members.map(m => `<li style="font-size:.85rem;padding:.2rem 0">${Components.escapeHtml(m.name)} — ${Components.escapeHtml(m.title)}</li>`).join('')}
+                  </ul>
+                </details>` : '<p style="font-size:.8rem;color:var(--color-text-sub)">暫無下屬</p>'}
+            </div>`).join('');
+      };
+      render();
+
+      document.getElementById('stationSearch').addEventListener('input', e => {
+        const q = e.target.value.toLowerCase();
+        filtered = managers.filter(m => m.name.toLowerCase().includes(q));
+        render();
+      });
+    } catch (err) { API.handleError(err); }
+  },
+
+  // ========================
+  // RACI 查詢
+  // ========================
+  async loadRaci(container) {
+    const taskCodes = ['ISMS-DOC','ISMS-RISK','ISMS-SEC','ISMS-INC','ISMS-OPS','ISMS-AUDIT','ISMS-BCM','PIMS-OP'];
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>📋 RACI 矩陣查詢</h1>
+        <a href="#/raci/me" class="btn btn--ghost btn--sm">🙋 我的責任</a>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+        <button class="btn btn--primary btn--sm" data-task="">全部</button>
+        ${taskCodes.map(t => `<button class="btn btn--ghost btn--sm" data-task="${t}">${t}</button>`).join('')}
+      </div>
+      <div id="raciTable"><div class="page-loading"><div class="spinner"></div></div></div>`;
+
+    let roleMap = new Map();
+    try {
+      const roleData = await API.getRoleMap().catch(() => []);
+      roleData.forEach(r => roleMap.set(r.roleCode, r.roleName));
+    } catch (e) {}
+
+    const renderRaciTable = async (taskCode) => {
+      const div = document.getElementById('raciTable');
+      div.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+      try {
+        const data = await API.getRaciByTask(taskCode || null);
+        div.innerHTML = `<div class="table-wrapper"><table class="data-table">
+          <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>R 執行</th><th>A 當責</th><th>C 諮詢</th><th>I 告知</th><th>備註</th></tr></thead>
+          <tbody>${data.length ? data.map(r => Components.RaciRow(r, roleMap)).join('') : '<tr><td colspan="8"><div class="empty-state"><p>無資料</p></div></td></tr>'}</tbody>
+        </table></div>`;
+      } catch (err) { API.handleError(err); }
+    };
+
+    await renderRaciTable(null);
+
+    container.querySelectorAll('button[data-task]').forEach(btn => {
+      btn.onclick = () => {
+        container.querySelectorAll('button[data-task]').forEach(b => b.className = 'btn btn--ghost btn--sm');
+        btn.className = 'btn btn--primary btn--sm';
+        renderRaciTable(btn.dataset.task);
+      };
+    });
+  },
+
+  // ========================
+  // 我的 RACI 責任
+  // ========================
+  async loadMyRaci(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>🙋 我的 RACI 責任</h1>
+        <button class="btn btn--ghost btn--sm" onclick="window.print()">🖨 列印</button>
+      </div>
+      <div id="myRaciContent"><div class="page-loading"><div class="spinner"></div></div></div>`;
+
+    try {
+      const data = await API.getMyRaciTasks();
+      const div = document.getElementById('myRaciContent');
+      const sections = [
+        { key: 'R', label: '🔴 R — 執行者（Responsible）', desc: '您負責實際執行的工作項目' },
+        { key: 'A', label: '🟠 A — 當責者（Accountable）', desc: '您具有最終核准責任的工作項目（ISO 稽核重點）' },
+        { key: 'C', label: '🟡 C — 諮詢對象（Consulted）', desc: '需要您提供意見的工作項目' },
+        { key: 'I', label: '🔵 I — 知會對象（Informed）', desc: '執行結果需告知您的工作項目' },
+      ];
+      div.innerHTML = sections.map(sec => `
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card__header">
+            <h3 class="card__title">${sec.label}</h3>
+            <p style="font-size:.8rem;color:var(--color-text-sub);margin-top:.25rem">${sec.desc}</p>
+          </div>
+          ${data[sec.key] && data[sec.key].length > 0 ? `
+            <div class="table-wrapper"><table class="data-table">
+              <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>備註</th></tr></thead>
+              <tbody>${data[sec.key].map(item => `
+                <tr>
+                  <td>${Components.escapeHtml(item.taskCode)}</td>
+                  <td>${Components.escapeHtml(item.itemCode)}</td>
+                  <td>${Components.escapeHtml(item.itemName)}</td>
+                  <td style="color:var(--color-text-sub);font-size:.8rem">${Components.escapeHtml(item.note || '')}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table></div>` : '<div class="empty-state"><p>無相關工作項目</p></div>'}
+        </div>`).join('');
+    } catch (err) { API.handleError(err); }
+  },
+
+  // ========================
+  // 稽核驗證
+  // ========================
+  async loadAudit(container) {
+    container.innerHTML = `
+      <div class="page-header">
+        <h1>🔍 稽核驗證報告</h1>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn--primary" id="runAuditBtn">▶ 執行驗證</button>
+          <button class="btn btn--ghost" id="exportAuditBtn">⬇ 匯出 CSV</button>
+        </div>
+      </div>
+      <div id="auditProgress" hidden>
+        <div class="card" style="margin-bottom:1rem">
+          <p style="margin-bottom:.5rem">驗證中，請稍候...</p>
+          <div class="progress-bar"><div class="progress-bar__fill" id="auditProgressBar" style="width:0%"></div></div>
+        </div>
+      </div>
+      <div id="auditResult">
+        <div class="empty-state" style="min-height:300px">
+          <div class="empty-state__icon">🔍</div>
+          <p>點擊「執行驗證」開始資料完整性檢查</p>
+        </div>
+      </div>`;
+
+    document.getElementById('runAuditBtn').onclick = async () => {
+      const btn = document.getElementById('runAuditBtn');
+      const progressDiv = document.getElementById('auditProgress');
+      const progressBar = document.getElementById('auditProgressBar');
+      btn.disabled = true;
+      progressDiv.hidden = false;
+
+      // 模擬進度（GAS 不支援串流，以動畫替代）
+      let prog = 0;
+      const interval = setInterval(() => {
+        prog = Math.min(prog + 8, 90);
+        progressBar.style.width = prog + '%';
+      }, 300);
+
+      try {
+        const results = await API.runFullAudit();
+        clearInterval(interval);
+        progressBar.style.width = '100%';
+        setTimeout(() => { progressDiv.hidden = true; }, 500);
+        Components.AuditResultPanel(results, 'auditResult');
+      } catch (err) {
+        clearInterval(interval);
+        API.handleError(err);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    document.getElementById('exportAuditBtn').onclick = async () => {
+      try {
+        const result = await API.exportAudit();
+        const blob = new Blob(['\uFEFF' + result.csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `稽核報告_${new Date().toLocaleDateString('zh-TW')}.csv`;
+        a.click(); URL.revokeObjectURL(url);
+        Components.showToast('稽核報告匯出成功', 'success');
+      } catch (err) { API.handleError(err); }
+    };
+  },
+};
+
+// =============================================
+// 應用程式啟動
+// =============================================
+document.addEventListener('DOMContentLoaded', () => Router.init());
+</script>

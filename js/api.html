@@ -1,0 +1,135 @@
+<script>
+/**
+ * api.js — google.script.run Promise 封裝層
+ * 
+ * 設計原則：
+ * - 將 callback-based 的 google.script.run 轉為 Promise 介面
+ * - 統一處理 JSON 解析、錯誤回報
+ * - withLoading 自動管理 Spinner，防止重複點擊
+ */
+
+const API = (() => {
+
+  /**
+   * 通用 Promise 封裝
+   * 呼叫 GAS 函式，成功 resolve(data)，失敗 reject(err)
+   * 
+   * @param {string}  fnName - GAS 全域函式名稱
+   * @param {...*}    args   - 傳入參數
+   * @returns {Promise<*>}
+   */
+  function callGAS(fnName, ...args) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(raw => {
+          // GAS 函式統一回傳 JSON 字串
+          try {
+            const result = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+            if (result && result.success === false) {
+              reject(new Error(result.error || '未知錯誤'));
+            } else {
+              resolve(result?.data ?? result);
+            }
+          } catch (e) {
+            reject(new Error('回應格式錯誤：' + String(raw)));
+          }
+        })
+        .withFailureHandler(err => {
+          reject(new Error(err.message || String(err)));
+        });
+
+      // 動態呼叫 GAS 函式
+      if (typeof runner[fnName] !== 'function') {
+        reject(new Error(`GAS 函式 ${fnName} 不存在`));
+        return;
+      }
+      runner[fnName](...args);
+    });
+  }
+
+  /**
+   * 執行 API 時在指定元素顯示 Spinner，結束後自動移除
+   * 同時在執行期間停用觸發按鈕，防止重複點擊
+   * 
+   * @param {Promise} promise    - 要執行的 API Promise
+   * @param {string}  containerId - 顯示 Spinner 的容器 ID
+   * @param {string}  [btnId]     - 執行期間要停用的按鈕 ID（選填）
+   * @returns {Promise<*>}
+   */
+  async function withLoading(promise, containerId, btnId) {
+    const container = document.getElementById(containerId);
+    const btn = btnId ? document.getElementById(btnId) : null;
+
+    // 顯示 Spinner
+    if (container) Components.showSpinner(containerId);
+    if (btn) btn.disabled = true;
+
+    try {
+      return await promise;
+    } finally {
+      // 不論成功或失敗，都恢復 UI
+      if (container) Components.hideSpinner(containerId);
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /**
+   * 統一錯誤處理
+   * 顯示 Toast 通知，並記錄至 console
+   * 
+   * @param {Error|string} err
+   */
+  function handleError(err) {
+    const message = (err instanceof Error) ? err.message : String(err);
+    console.error('[API 錯誤]', message);
+    Components.showToast(message, 'error');
+  }
+
+  // =============================================
+  // 預定義 API 方法（語意化包裝）
+  // =============================================
+
+  return {
+    callGAS,
+    withLoading,
+    handleError,
+
+    // 身份驗證
+    getCurrentUser:   ()         => callGAS('getCurrentUser'),
+    getSessionInfo:   ()         => callGAS('getSessionInfo'),
+    checkPermission:  (feature)  => callGAS('checkPermission', feature),
+
+    // 人員管理
+    getAllPersonnel:   ()                     => callGAS('getAllPersonnel'),
+    addPerson:        (obj)                  => callGAS('addPerson', obj),
+    updatePerson:     (email, obj)           => callGAS('updatePerson', email, obj),
+    deletePerson:     (email)                => callGAS('deletePerson', email),
+    getAssignments:   (email)                => callGAS('getAssignmentsByEmail', email),
+    addAssignment:    (obj)                  => callGAS('addAssignment', obj),
+    updateAssignment: (rowIndex, obj)        => callGAS('updateAssignment', rowIndex, obj),
+    deleteAssignment: (rowIndex)             => callGAS('deleteAssignment', rowIndex),
+
+    // 組織架構
+    getOrgTree:         (type)               => callGAS('getOrgTree', type),
+    getStationManagers: ()                   => callGAS('getStationManagers'),
+    detectVertical:     (email)              => callGAS('detectVerticalConcurrency', email),
+    addOrgNode:         (obj)                => callGAS('addOrgNode', obj),
+    updateOrgNode:      (code, obj)          => callGAS('updateOrgNode', code, obj),
+
+    // RACI
+    getRaciByTask:  (taskCode)  => callGAS('getRaciByTask', taskCode),
+    getRaciByRole:  (roleCode)  => callGAS('getRaciByRole', roleCode),
+    getMyRaciTasks: ()          => callGAS('getMyRaciTasks'),
+    getRoleMap:     ()          => callGAS('getRoleMap'),
+    resolveRole:    (roleCode)  => callGAS('resolveRole', roleCode),
+
+    // 稽核
+    runFullAudit:   ()          => callGAS('runFullAudit'),
+    exportAudit:    ()          => callGAS('exportAuditReport'),
+
+    // 儀表板
+    getRecentLogs:  ()          => callGAS('getRecentLogs'),
+  };
+
+})();
+</script>
