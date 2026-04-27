@@ -116,6 +116,41 @@ const Components = (() => {
     }
   }
 
+  /**
+   * 渲染頁面載入失敗狀態，避免容器停留在 loading placeholder。
+   *
+   * @param {string} elId
+   * @param {{title?:string, message?:string, details?:string, actionLabel?:string, onAction?:Function}} options
+   */
+  function renderLoadError(elId, options = {}) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+
+    const title = options.title || '載入失敗';
+    const message = options.message || '資料載入失敗，請稍後再試。';
+    const details = options.details ? `<code style="display:block;margin-top:.75rem;white-space:pre-wrap">${escapeHtml(options.details)}</code>` : '';
+    const actionHtml = options.actionLabel ? '<button class="btn btn--primary btn--sm" data-role="retry-btn" style="margin-top:1rem"></button>' : '';
+
+    el.innerHTML = `
+      <div class="empty-state" style="min-height:240px">
+        <div class="empty-state__icon">⚠️</div>
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(message)}</p>
+        ${details}
+        ${actionHtml}
+      </div>`;
+
+    if (options.actionLabel) {
+      const btn = el.querySelector('[data-role="retry-btn"]');
+      if (btn) {
+        btn.textContent = options.actionLabel;
+        btn.onclick = () => {
+          if (typeof options.onAction === 'function') options.onAction();
+        };
+      }
+    }
+  }
+
   // =============================================
   // 資料表格（DataTable）
   // =============================================
@@ -421,6 +456,7 @@ const Components = (() => {
     hideModal,
     showSpinner,
     hideSpinner,
+    renderLoadError,
     DataTable,
     OrgNode,
     PersonCard,

@@ -33,6 +33,50 @@ function getDashboardStats() {
     }
     return errorResponse('無查詢儀表板的權限');
   } catch (error) {
+    Logger.log('getDashboardStats 錯誤：' + (error.stack || error.message));
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 取得應用程式診斷資訊，供前端錯誤頁與 console 對照使用。
+ *
+ * 僅限可檢視完整儀表板的角色呼叫，避免暴露過多內部資訊。
+ * @returns {string} JSON 回應
+ */
+function getAppDebugInfo() {
+  try {
+    if (!checkPermission('dashboard.full')) {
+      return errorResponse('無查詢診斷資訊的權限');
+    }
+
+    const email = Session.getActiveUser().getEmail();
+    const userInfo = resolveUserRole(email);
+    const ss = getSpreadsheet();
+    const sheetStatus = buildSheetStatus_();
+
+    return successResponse({
+      user: userInfo ? {
+        email: userInfo.email,
+        role: userInfo.role,
+        roleLabel: userInfo.roleLabel,
+      } : { email },
+      spreadsheet: {
+        id: ss.getId(),
+        name: ss.getName(),
+        url: ss.getUrl(),
+      },
+      counts: {
+        personnel: DataService.getSheet1Data().length,
+        org: DataService.getSheet2Data(null).length,
+        assignment: DataService.getAllAssignments().length,
+        raci: DataService.getSheet4Data(null).length,
+        roleMap: DataService.getSheet5Data().length,
+      },
+      sheets: sheetStatus,
+    });
+  } catch (error) {
+    Logger.log('getAppDebugInfo 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
 }
@@ -263,4 +307,24 @@ function buildQuickAuditAlerts() {
   } catch (e) {
     return { accountabilityIssues: -1, roleCodeIssues: -1, hasAlert: false };
   }
+}
+
+function buildSheetStatus_() {
+  return Object.values(SHEET_NAMES).map(name => {
+    try {
+      const sheet = getSheet(name);
+      return {
+        name,
+        exists: true,
+        lastRow: sheet.getLastRow(),
+        lastColumn: sheet.getLastColumn(),
+      };
+    } catch (error) {
+      return {
+        name,
+        exists: false,
+        error: error.message,
+      };
+    }
+  });
 }

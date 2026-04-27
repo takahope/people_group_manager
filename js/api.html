@@ -9,6 +9,7 @@
  */
 
 const API = (() => {
+  const DEFAULT_TIMEOUT_MS = 15000;
 
   /**
    * 通用 Promise 封裝
@@ -20,26 +21,42 @@ const API = (() => {
    */
   function callGAS(fnName, ...args) {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeoutId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error(`${fnName} timeout after ${DEFAULT_TIMEOUT_MS}ms`));
+      }, DEFAULT_TIMEOUT_MS);
+
       const runner = google.script.run
         .withSuccessHandler(raw => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
           // GAS 函式統一回傳 JSON 字串
           try {
             const result = (typeof raw === 'string') ? JSON.parse(raw) : raw;
             if (result && result.success === false) {
-              reject(new Error(result.error || '未知錯誤'));
+              reject(new Error(`[${fnName}] ${result.error || '未知錯誤'}`));
             } else {
-              resolve(result?.data ?? result);
+              resolve(result && Object.prototype.hasOwnProperty.call(result, 'data') ? result.data : result);
             }
           } catch (e) {
-            reject(new Error('回應格式錯誤：' + String(raw)));
+            reject(new Error(`[${fnName}] 回應格式錯誤：${String(raw)}`));
           }
         })
         .withFailureHandler(err => {
-          reject(new Error(err.message || String(err)));
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          reject(new Error(`[${fnName}] ${err.message || String(err)}`));
         });
 
       // 動態呼叫 GAS 函式
       if (typeof runner[fnName] !== 'function') {
+        settled = true;
+        clearTimeout(timeoutId);
         reject(new Error(`GAS 函式 ${fnName} 不存在`));
         return;
       }
@@ -128,7 +145,9 @@ const API = (() => {
     exportAudit:    ()          => callGAS('exportAuditReport'),
 
     // 儀表板
-    getRecentLogs:  ()          => callGAS('getRecentLogs'),
+    getRecentLogs:      ()      => callGAS('getRecentLogs'),
+    getDashboardStats:  ()      => callGAS('getDashboardStats'),
+    getAppDebugInfo:    ()      => callGAS('getAppDebugInfo'),
   };
 
 })();

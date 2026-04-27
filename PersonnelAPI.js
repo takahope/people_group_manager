@@ -186,6 +186,7 @@ function getAllPersonnel() {
 
     return errorResponse('無查詢人員的權限');
   } catch (error) {
+    Logger.log('getAllPersonnel 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
 }
@@ -221,6 +222,7 @@ function getRecentLogs() {
     }
     return successResponse(DataService.getRecentAuditLogs(10));
   } catch (error) {
+    Logger.log('getRecentLogs 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
 }

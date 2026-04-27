@@ -110,6 +110,13 @@ const Router = (() => {
     } catch (error) {
       console.error('Router 初始化失敗：', error);
       Components.showToast('頁面初始化失敗，請重新整理', 'error');
+      Components.renderLoadError('mainContent', {
+        title: '頁面初始化失敗',
+        message: '前端初始化未完成，請重新整理頁面。',
+        details: error.message,
+        actionLabel: '重新整理',
+        onAction: () => location.reload(),
+      });
     }
   }
 
@@ -355,21 +362,30 @@ const Pages = {
           .map((_, i) => `<div class="stat-card"><div class="stat-card__label">載入中...</div><div class="stat-card__value">—</div></div>`).join('')}
       </div>
       <div id="dashboardLogs" class="card"><div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div></div>
+      <div id="dashboardDebug" style="margin-top:1rem"></div>
     `;
 
     try {
-      const [personnel, logs] = await Promise.all([
-        API.getAllPersonnel(),
-        API.getRecentLogs().catch(() => []),
-      ]);
-
-      const total = personnel.length;
+      const stats = await API.getDashboardStats();
+      const logs = stats.recentLogs || [];
+      const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
+      const concurrentCount = Array.isArray(stats.concurrentPersonnel)
+        ? stats.concurrentPersonnel.length
+        : (stats.concurrentCount || 0);
+      const raciRate = stats.raciCoverage?.rate ?? '—';
+      const auditAlertCount = stats.auditAlerts
+        ? ((stats.auditAlerts.accountabilityIssues > 0 ? stats.auditAlerts.accountabilityIssues : 0)
+          + (stats.auditAlerts.roleCodeIssues > 0 ? stats.auditAlerts.roleCodeIssues : 0))
+        : '—';
       const statGrid = document.getElementById('statGrid');
       statGrid.innerHTML = `
         <div class="stat-card"><div class="stat-card__label">在職總人數</div><div class="stat-card__value">${total}</div></div>
-        <div class="stat-card"><div class="stat-card__label">系統版本</div><div class="stat-card__value" style="font-size:1rem">v1.0</div></div>
+        <div class="stat-card"><div class="stat-card__label">兼任人員</div><div class="stat-card__value">${concurrentCount}</div></div>
+        <div class="stat-card"><div class="stat-card__label">RACI 覆蓋率</div><div class="stat-card__value">${raciRate === '—' ? '—' : `${raciRate}%`}</div></div>
+        <div class="stat-card"><div class="stat-card__label">稽核警示</div><div class="stat-card__value">${auditAlertCount}</div></div>
         <div class="stat-card"><div class="stat-card__label">身份角色</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(user?.roleLabel || '—')}</div></div>
         <div class="stat-card"><div class="stat-card__label">登入帳號</div><div class="stat-card__value" style="font-size:.9rem">${Components.escapeHtml(user?.email || '—')}</div></div>
+        <div class="stat-card"><div class="stat-card__label">統計範圍</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(stats.scope || '—')}</div></div>
       `;
 
       const logsDiv = document.getElementById('dashboardLogs');
@@ -393,7 +409,34 @@ const Pages = {
           </table>
         </div>`;
     } catch (err) {
+      console.error('loadDashboard 失敗：', err);
       API.handleError(err);
+      Components.renderLoadError('mainContent', {
+        title: '儀表板載入失敗',
+        message: '首頁資料未能完成初始化。',
+        details: err.message,
+        actionLabel: '重新載入首頁',
+        onAction: () => Pages.loadDashboard(container, user),
+      });
+      API.getAppDebugInfo()
+        .then(info => {
+          console.error('Dashboard debug info:', info);
+          const debugContainer = document.getElementById('mainContent');
+          if (!debugContainer) return;
+          debugContainer.insertAdjacentHTML('beforeend', `
+            <div class="card" style="margin-top:1rem">
+              <div class="card__header"><h3 class="card__title">診斷資訊</h3></div>
+              <div style="font-size:.85rem;color:var(--color-text-sub);line-height:1.7">
+                <div>使用者：${Components.escapeHtml(info.user?.email || '—')}</div>
+                <div>角色：${Components.escapeHtml(info.user?.roleLabel || info.user?.role || '—')}</div>
+                <div>試算表：${Components.escapeHtml(info.spreadsheet?.name || '—')}</div>
+                <div>資料筆數：人員 ${info.counts?.personnel ?? '—'} / 組織 ${info.counts?.org ?? '—'} / 職務 ${info.counts?.assignment ?? '—'} / RACI ${info.counts?.raci ?? '—'}</div>
+              </div>
+            </div>`);
+        })
+        .catch(debugErr => {
+          console.error('Dashboard debug info failed:', debugErr);
+        });
     }
   },
 
@@ -456,7 +499,15 @@ const Pages = {
         document.getElementById('addPersonBtn').onclick = () => Pages._showPersonForm(null, () => Pages.loadPersonnel(container, user));
       }
     } catch (err) {
+      console.error('loadPersonnel 失敗：', err);
       API.handleError(err);
+      Components.renderLoadError('personnelTable', {
+        title: '人員資料載入失敗',
+        message: '無法取得人員清單。',
+        details: err.message,
+        actionLabel: '重試',
+        onAction: () => Pages.loadPersonnel(container, user),
+      });
     }
   },
 
@@ -532,7 +583,18 @@ const Pages = {
       </div>
       <div id="assignmentResult"></div>`;
 
-    const all = await API.getAllPersonnel().catch(() => []);
+    const all = await API.getAllPersonnel().catch(err => {
+      console.error('loadAssignments 初始化失敗：', err);
+      API.handleError(err);
+      Components.renderLoadError('assignmentResult', {
+        title: '人員搜尋初始化失敗',
+        message: '無法載入可搜尋的人員名單。',
+        details: err.message,
+        actionLabel: '重試',
+        onAction: () => Pages.loadAssignments(container, user),
+      });
+      return [];
+    });
 
     document.getElementById('assignSearch').addEventListener('input', async e => {
       const q = e.target.value.trim().toLowerCase();
@@ -587,7 +649,17 @@ const Pages = {
         treeDiv.innerHTML = '';
         if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
         tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0)));
-      } catch (err) { API.handleError(err); }
+      } catch (err) {
+        console.error('loadOrg 失敗：', err);
+        API.handleError(err);
+        Components.renderLoadError('orgTreeContainer', {
+          title: '組織架構載入失敗',
+          message: '無法取得組織樹資料。',
+          details: err.message,
+          actionLabel: '重試',
+          onAction: () => renderTree(type),
+        });
+      }
     };
 
     await renderTree(null);
@@ -644,7 +716,17 @@ const Pages = {
         filtered = managers.filter(m => m.name.toLowerCase().includes(q));
         render();
       });
-    } catch (err) { API.handleError(err); }
+    } catch (err) {
+      console.error('loadStations 失敗：', err);
+      API.handleError(err);
+      Components.renderLoadError('stationList', {
+        title: '駐站管理員載入失敗',
+        message: '無法取得駐站管理員資料。',
+        details: err.message,
+        actionLabel: '重試',
+        onAction: () => Pages.loadStations(container),
+      });
+    }
   },
 
   // ========================
@@ -678,7 +760,17 @@ const Pages = {
           <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>R 執行</th><th>A 當責</th><th>C 諮詢</th><th>I 告知</th><th>備註</th></tr></thead>
           <tbody>${data.length ? data.map(r => Components.RaciRow(r, roleMap)).join('') : '<tr><td colspan="8"><div class="empty-state"><p>無資料</p></div></td></tr>'}</tbody>
         </table></div>`;
-      } catch (err) { API.handleError(err); }
+      } catch (err) {
+        console.error('loadRaci 失敗：', err);
+        API.handleError(err);
+        Components.renderLoadError('raciTable', {
+          title: 'RACI 載入失敗',
+          message: '無法取得 RACI 清單。',
+          details: err.message,
+          actionLabel: '重試',
+          onAction: () => renderRaciTable(taskCode),
+        });
+      }
     };
 
     await renderRaciTable(null);
@@ -731,7 +823,17 @@ const Pages = {
               </tbody>
             </table></div>` : '<div class="empty-state"><p>無相關工作項目</p></div>'}
         </div>`).join('');
-    } catch (err) { API.handleError(err); }
+    } catch (err) {
+      console.error('loadMyRaci 失敗：', err);
+      API.handleError(err);
+      Components.renderLoadError('myRaciContent', {
+        title: '我的責任載入失敗',
+        message: '無法取得個人 RACI 資料。',
+        details: err.message,
+        actionLabel: '重試',
+        onAction: () => Pages.loadMyRaci(container),
+      });
+    }
   },
 
   // ========================
