@@ -56,10 +56,10 @@ function findPersonByEmail(email) {
  */
 function rowToPersonnel(row) {
   return {
-    email:          row[0],
-    name:           row[1],
-    assetGroupCode: row[2],
-    assetGroupName: row[3],
+    email:          row[COL.PERSONNEL.EMAIL],
+    name:           row[COL.PERSONNEL.NAME],
+    assetGroupCode: row[COL.PERSONNEL.ASSET_GROUP_CODE],
+    assetGroupName: row[COL.PERSONNEL.ASSET_GROUP_NAME],
   };
 }
 
@@ -109,14 +109,14 @@ function getCachedOrgData() {
 
 function rowToOrg(row) {
   return {
-    type:         row[0],
-    level:        Number(row[1]),
-    code:         row[2],
-    name:         row[3],
-    alias:        row[4] || '',
-    parentCode:   row[5] || '',
-    managerEmail: row[6] || '',
-    managerName:  row[7] || '',
+    type:         row[COL.ORG.TYPE],
+    level:        Number(row[COL.ORG.LEVEL]),
+    code:         row[COL.ORG.CODE],
+    name:         row[COL.ORG.NAME],
+    alias:        row[COL.ORG.ALIAS] || '',
+    parentCode:   row[COL.ORG.PARENT_CODE] || '',
+    managerEmail: row[COL.ORG.MANAGER_EMAIL] || '',
+    managerName:  row[COL.ORG.MANAGER_NAME] || '',
   };
 }
 
@@ -171,13 +171,13 @@ function getAllAssignments() {
 
 function rowToAssignment(row, rowIndex) {
   return {
-    email:        row[0],
-    name:         row[1],
-    orgCode:      row[2],
-    orgName:      row[3],
-    title:        row[4],
-    managerEmail: row[5] || '',
-    managerName:  row[6] || '',
+    email:        row[COL.ASSIGNMENT.EMAIL],
+    name:         row[COL.ASSIGNMENT.NAME],
+    orgCode:      row[COL.ASSIGNMENT.ORG_CODE],
+    orgName:      row[COL.ASSIGNMENT.ORG_NAME],
+    title:        row[COL.ASSIGNMENT.TITLE],
+    managerEmail: row[COL.ASSIGNMENT.MANAGER_EMAIL] || '',
+    managerName:  row[COL.ASSIGNMENT.MANAGER_NAME] || '',
     rowIndex,
   };
 }
@@ -208,15 +208,15 @@ function getSheet4Data(taskCode) {
 
 function rowToRaci(row) {
   return {
-    taskCode: row[0],
-    taskName: row[1],
-    itemCode: row[2],
-    itemName: row[3],
-    R:        row[4] || '',
-    A:        row[5] || '',
-    C:        row[6] || '',
-    I:        row[7] || '',
-    note:     row[8] || '',
+    taskCode: row[COL.RACI.TASK_CODE],
+    taskName: row[COL.RACI.TASK_NAME],
+    itemCode: row[COL.RACI.ITEM_CODE],
+    itemName: row[COL.RACI.ITEM_NAME],
+    R:        row[COL.RACI.R] || '',
+    A:        row[COL.RACI.A] || '',
+    C:        row[COL.RACI.C] || '',
+    I:        row[COL.RACI.I] || '',
+    note:     row[COL.RACI.NOTE] || '',
   };
 }
 
@@ -227,7 +227,7 @@ function rowToRaci(row) {
 /**
  * 取得完整角色對照表，使用 CacheService 快取
  * 
- * @returns {Array<{roleCode, roleName, entityId, description}>}
+ * @returns {Array<{roleCode, roleName, entityType, entityId, description}>}
  */
 function getSheet5Data() {
   const cache = CacheService.getScriptCache();
@@ -241,12 +241,7 @@ function getSheet5Data() {
 }
 
 function rowToRoleMap(row) {
-  return {
-    roleCode:    row[0],
-    roleName:    row[1],
-    entityId:    row[2],
-    description: row[3] || '',
-  };
+  return normalizeRoleMapRow(row);
 }
 
 /**
@@ -292,9 +287,9 @@ function updatePersonnelByEmail(email, personObj) {
 
   // 從第 2 列開始搜尋（第 1 列為標題）
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] !== email) continue;
+    if (data[i][COL.PERSONNEL.EMAIL] !== email) continue;
     const rowNum = i + 1;
-    sheet.getRange(rowNum, 1, 1, 4).setValues([[
+    sheet.getRange(rowNum, 1, 1, widthFromColMap(COL.PERSONNEL)).setValues([[
       personObj.email,
       personObj.name,
       personObj.assetGroupCode,
@@ -316,7 +311,7 @@ function deletePersonnelByEmail(email) {
   const data = sheet.getDataRange().getValues();
 
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][0] !== email) continue;
+    if (data[i][COL.PERSONNEL.EMAIL] !== email) continue;
     sheet.deleteRow(i + 1);
     return true;
   }
@@ -353,7 +348,7 @@ function appendAssignment(assignObj) {
  */
 function updateAssignmentByRow(rowIndex, assignObj) {
   const sheet = getSheet(SHEET_NAMES.ASSIGNMENT);
-  sheet.getRange(rowIndex, 1, 1, 7).setValues([[
+  sheet.getRange(rowIndex, 1, 1, widthFromColMap(COL.ASSIGNMENT)).setValues([[
     assignObj.email,
     assignObj.name,
     assignObj.orgCode,
@@ -397,8 +392,8 @@ function updateOrgNodeByCode(code, nodeObj) {
   const data = sheet.getDataRange().getValues();
 
   for (let i = 1; i < data.length; i++) {
-    if (data[i][2] !== code) continue;
-    sheet.getRange(i + 1, 1, 1, 8).setValues([[
+    if (data[i][COL.ORG.CODE] !== code) continue;
+    sheet.getRange(i + 1, 1, 1, widthFromColMap(COL.ORG)).setValues([[
       nodeObj.type,
       nodeObj.level,
       nodeObj.code,
@@ -459,11 +454,11 @@ function getRecentAuditLogs(n) {
   const rows = data.slice(1); // 去掉標題列
   const recent = rows.slice(-n).reverse(); // 取最後 n 筆，倒序
   return recent.map(row => ({
-    timestamp: row[0],
-    operator:  row[1],
-    action:    row[2],
-    target:    row[3],
-    details:   row[4],
+    timestamp: row[COL.AUDIT_LOG.TIMESTAMP],
+    operator:  row[COL.AUDIT_LOG.OPERATOR_EMAIL],
+    action:    row[COL.AUDIT_LOG.ACTION],
+    target:    row[COL.AUDIT_LOG.TARGET],
+    details:   row[COL.AUDIT_LOG.DETAILS],
   }));
 }
 

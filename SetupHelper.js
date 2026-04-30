@@ -49,8 +49,8 @@ function setupSheets() {
     },
     {
       name:    SHEET_NAMES.ROLE_MAP,
-      headers: ['角色代碼', '角色名稱', '對應實體ID/說明', '說明（來源文件定義）'],
-      note:    'Sheet 5：RACI 角色對照表 — 角色代碼為主鍵',
+      headers: ['角色代碼', '角色名稱', '對應實體類型', '對應實體ID/說明'],
+      note:    'Sheet 5：RACI 角色對照表 — 角色代碼為主鍵，類型支援 PERSON / GROUP / RULE / EXTERNAL',
     },
     {
       name:    SHEET_NAMES.AUDIT_LOG,
@@ -163,7 +163,7 @@ function injectSampleData_DEV_ONLY() {
     ['PARTNER', 3, 'PARTNER-SYS', '系統開發外包廠商', '', '', '', ''],
     ['GOV',     3, 'GOV-AUTH',    '個資監管機關',     '', '', '', ''],
   ];
-  orgSheet.getRange(2, 1, orgData.length, 8).setValues(orgData);
+  orgSheet.getRange(2, 1, orgData.length, widthFromColMap(COL.ORG)).setValues(orgData);
 
   // Sheet 1：人員主檔
   const personnelSheet = getSheet(SHEET_NAMES.PERSONNEL);
@@ -176,7 +176,7 @@ function injectSampleData_DEV_ONLY() {
     ['e006@example.org', '小明',      'GRP-REC',   '收案組'],
     ['e007@example.org', '小華',      'GRP-INFO',  '資訊組'],
   ];
-  personnelSheet.getRange(2, 1, personnelData.length, 4).setValues(personnelData);
+  personnelSheet.getRange(2, 1, personnelData.length, widthFromColMap(COL.PERSONNEL)).setValues(personnelData);
 
   // Sheet 3：人員職務配置
   const assignSheet = getSheet(SHEET_NAMES.ASSIGNMENT);
@@ -192,22 +192,22 @@ function injectSampleData_DEV_ONLY() {
     ['e006@example.org', '小明',      'GRP-REC',   '收案組',    '駐站管理員',      'e003@example.org', '張生醫部長'],
     ['e007@example.org', '小華',      'GRP-INFO',  '資訊組',    '系統管理師',      'e004@example.org', '陳資訊部長'],
   ];
-  assignSheet.getRange(2, 1, assignData.length, 7).setValues(assignData);
+  assignSheet.getRange(2, 1, assignData.length, widthFromColMap(COL.ASSIGNMENT)).setValues(assignData);
 
   // Sheet 5：角色對照表（部分）
   const roleSheet = getSheet(SHEET_NAMES.ROLE_MAP);
   const roleData = [
-    ['ROLE-CONVENER',     '召集人',       'e001@example.org', '核准一階文件'],
-    ['ROLE-CISO',         '資訊安全長',   'e005@example.org', '核准二至四階文件'],
-    ['ROLE-ISWG-LEAD',    '資安小組組長', 'e004@example.org', '核准資產清單'],
-    ['ROLE-PIMS-LEAD',    '個資小組組長', 'e003@example.org', '個資侵害處理'],
-    ['ROLE-AUDIT-LEAD',   '稽核小組組長', 'e005@example.org', '核准稽核報告'],
-    ['ROLE-PROCESS-OWNER','業務承辦人',   'ALL',              '各項表單執行'],
-    ['ROLE-SYS-ADMIN',    '系統管理人員', 'GRP-INFO',         '系統權限管理'],
-    ['ROLE-AUDITOR',      '稽核員',       'TF-GRP-AUDIT',     '執行稽核作業'],
-    ['ROLE-UNIT-HEAD',    '單位主管',     'Level=3',          '部門主管'],
+    ['ROLE-CONVENER',     '召集人',       'PERSON', 'e001@example.org'],
+    ['ROLE-CISO',         '資訊安全長',   'PERSON', 'e005@example.org'],
+    ['ROLE-ISWG-LEAD',    '資安小組組長', 'PERSON', 'e004@example.org'],
+    ['ROLE-PIMS-LEAD',    '個資小組組長', 'PERSON', 'e003@example.org'],
+    ['ROLE-AUDIT-LEAD',   '稽核小組組長', 'PERSON', 'e005@example.org'],
+    ['ROLE-PROCESS-OWNER','業務承辦人',   'RULE',   'ALL'],
+    ['ROLE-SYS-ADMIN',    '系統管理人員', 'GROUP',  'GRP-INFO'],
+    ['ROLE-AUDITOR',      '稽核員',       'GROUP',  'TF-GRP-AUDIT'],
+    ['ROLE-UNIT-HEAD',    '單位主管',     'RULE',   'Level=3'],
   ];
-  roleSheet.getRange(2, 1, roleData.length, 4).setValues(roleData);
+  roleSheet.getRange(2, 1, roleData.length, widthFromColMap(COL.ROLE_MAP)).setValues(roleData);
 
   ui.alert('✅ 測試資料注入完成', '已注入人員、組織、職務配置、角色對照表基礎資料。', ui.ButtonSet.OK);
 }
@@ -226,9 +226,9 @@ function ensureAuditLogSheet() {
   if (sheet) return;
 
   sheet = ss.insertSheet(SHEET_NAMES.AUDIT_LOG);
-  sheet.getRange(1, 1, 1, 5).setValues([['時間戳', '操作者Email', '操作類型', '操作對象', '異動摘要']]);
+  sheet.getRange(1, 1, 1, widthFromColMap(COL.AUDIT_LOG)).setValues([['時間戳', '操作者Email', '操作類型', '操作對象', '異動摘要']]);
   sheet.setFrozenRows(1);
-  sheet.getRange(1, 1, 1, 5)
+  sheet.getRange(1, 1, 1, widthFromColMap(COL.AUDIT_LOG))
        .setBackground('#34495e')
        .setFontColor('#ffffff')
        .setFontWeight('bold');
