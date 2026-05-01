@@ -168,7 +168,7 @@ const Router = (() => {
         throw new Error(`找不到頁面載入函式：${route.loaderKey}`);
       }
       Components.showSpinner('mainContent');
-      await loader(mainContent, currentUser, pageContext);
+      await loader.call(Pages, mainContent, currentUser, pageContext);
     } catch (error) {
       console.error('頁面載入失敗：', error);
       mainContent.innerHTML = `
@@ -700,7 +700,7 @@ const Pages = {
       ]);
       if (!pageCtx.isActive()) return;
 
-      this._assignmentState = {
+      Pages._assignmentState = {
         pageCtx,
         canWrite,
         allItems,
@@ -711,8 +711,8 @@ const Pages = {
         pageSize: 50,
       };
 
-      this._bindAssignmentFilters();
-      this._applyAssignmentFilters(false);
+      Pages._bindAssignmentFilters();
+      Pages._applyAssignmentFilters(false);
     } catch (err) {
       if (!pageCtx.isActive()) return;
       console.error('loadAssignments 初始化失敗：', err);
@@ -728,7 +728,7 @@ const Pages = {
   },
 
   _bindAssignmentFilters() {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     const pageCtx = state?.pageCtx;
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
@@ -741,9 +741,9 @@ const Pages = {
 
     if (keywordInput) {
       keywordInput.addEventListener('input', () => {
-        clearTimeout(this._assignmentKeywordTimer);
-        this._assignmentKeywordTimer = setTimeout(() => {
-          this._applyAssignmentFilters();
+        clearTimeout(Pages._assignmentKeywordTimer);
+        Pages._assignmentKeywordTimer = setTimeout(() => {
+          Pages._applyAssignmentFilters();
         }, 300);
       });
     }
@@ -753,24 +753,24 @@ const Pages = {
       input.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        this._applyAssignmentFilters();
+        Pages._applyAssignmentFilters();
       });
     });
 
-    if (searchBtn) searchBtn.onclick = () => this._applyAssignmentFilters();
+    if (searchBtn) searchBtn.onclick = () => Pages._applyAssignmentFilters();
     if (clearBtn) {
       clearBtn.onclick = () => {
         if (keywordInput) keywordInput.value = '';
         if (orgInput) orgInput.value = '';
         if (titleInput) titleInput.value = '';
-        this._applyAssignmentFilters();
+        Pages._applyAssignmentFilters();
       };
     }
-    if (addBtn) addBtn.onclick = () => this._showAssignmentForm();
+    if (addBtn) addBtn.onclick = () => Pages._showAssignmentForm();
   },
 
   _applyAssignmentFilters(resetPage = true) {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     const pageCtx = state?.pageCtx;
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
@@ -795,11 +795,11 @@ const Pages = {
     });
 
     if (resetPage) state.currentPage = 1;
-    this._renderAssignmentTable();
+    Pages._renderAssignmentTable();
   },
 
   _renderAssignmentTable() {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     const pageCtx = state?.pageCtx;
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
@@ -846,11 +846,11 @@ const Pages = {
               </tr>
             </thead>
             <tbody>
-              ${pageItems.map(item => this._renderAssignmentRow(item, state.canWrite)).join('')}
+              ${pageItems.map(item => Pages._renderAssignmentRow(item, state.canWrite)).join('')}
             </tbody>
           </table>
         </div>
-        ${this._renderAssignmentPagination(totalPages)}
+        ${Pages._renderAssignmentPagination(totalPages)}
       </div>`;
 
     section.querySelectorAll('[data-page]').forEach(btn => {
@@ -858,7 +858,7 @@ const Pages = {
         const page = Number(btn.dataset.page);
         if (!page || page === state.currentPage) return;
         state.currentPage = page;
-        this._renderAssignmentTable();
+        Pages._renderAssignmentTable();
       };
     });
   },
@@ -900,7 +900,7 @@ const Pages = {
   },
 
   _renderAssignmentPagination(totalPages) {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     if (!state || totalPages <= 1) return '';
 
     const prevDisabled = state.currentPage <= 1 ? 'disabled' : '';
@@ -914,7 +914,7 @@ const Pages = {
   },
 
   _showAssignmentForm() {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     if (!state) return;
 
     const personnelList = state.options.personnelOptions.map(item =>
@@ -951,7 +951,7 @@ const Pages = {
     Components.showModal('新增職務配置', body, async () => {
       const confirmBtn = document.getElementById('modalConfirmBtn');
       const originalText = confirmBtn ? confirmBtn.textContent : '儲存';
-      const payload = this._collectAssignmentFormPayload();
+      const payload = Pages._collectAssignmentFormPayload();
       if (!payload) return false;
 
       if (confirmBtn) confirmBtn.textContent = '儲存中...';
@@ -961,7 +961,7 @@ const Pages = {
         if (result?.matrixConcurrencyWarning) {
           Components.showToast('此人員新增後形成矩陣兼任，請再確認主管配置。', 'warning');
         }
-        await this._reloadAssignmentData(true);
+        await Pages._reloadAssignmentData(true);
         return true;
       } catch (err) {
         API.handleError(err);
@@ -976,17 +976,17 @@ const Pages = {
     const titleInput = document.getElementById('assignmentTitleInput');
     const managerInput = document.getElementById('assignmentManagerInput');
 
-    if (personInput) personInput.addEventListener('blur', () => this._validateAssignmentPersonField());
-    if (orgInput) orgInput.addEventListener('blur', () => this._validateAssignmentOrgField());
-    if (titleInput) titleInput.addEventListener('blur', () => this._validateAssignmentTitleField());
-    if (managerInput) managerInput.addEventListener('blur', () => this._validateAssignmentManagerField());
+    if (personInput) personInput.addEventListener('blur', () => Pages._validateAssignmentPersonField());
+    if (orgInput) orgInput.addEventListener('blur', () => Pages._validateAssignmentOrgField());
+    if (titleInput) titleInput.addEventListener('blur', () => Pages._validateAssignmentTitleField());
+    if (managerInput) managerInput.addEventListener('blur', () => Pages._validateAssignmentManagerField());
   },
 
   _collectAssignmentFormPayload() {
-    const person = this._validateAssignmentPersonField();
-    const org = this._validateAssignmentOrgField();
-    const title = this._validateAssignmentTitleField();
-    const manager = this._validateAssignmentManagerField();
+    const person = Pages._validateAssignmentPersonField();
+    const org = Pages._validateAssignmentOrgField();
+    const title = Pages._validateAssignmentTitleField();
+    const manager = Pages._validateAssignmentManagerField();
 
     if (!person || !org || !title || manager === false) return null;
 
@@ -1001,62 +1001,62 @@ const Pages = {
   _validateAssignmentPersonField() {
     const value = String(document.getElementById('assignmentPersonInput')?.value || '').trim();
     if (!value) {
-      this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '請選擇人員');
+      Pages._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '請選擇人員');
       return null;
     }
-    const person = this._findPersonnelOption(value);
+    const person = Pages._findPersonnelOption(value);
     if (!person) {
-      this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '指定的人員不存在於人員主檔');
+      Pages._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '指定的人員不存在於人員主檔');
       return null;
     }
-    this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '');
+    Pages._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '');
     return person;
   },
 
   _validateAssignmentOrgField() {
     const value = String(document.getElementById('assignmentOrgInput')?.value || '').trim();
     if (!value) {
-      this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '請選擇組織單位');
+      Pages._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '請選擇組織單位');
       return null;
     }
-    const org = this._findOrgOption(value);
+    const org = Pages._findOrgOption(value);
     if (!org) {
-      this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '指定的組織不存在於組織主檔');
+      Pages._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '指定的組織不存在於組織主檔');
       return null;
     }
-    this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '');
+    Pages._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '');
     return org;
   },
 
   _validateAssignmentTitleField() {
     const value = String(document.getElementById('assignmentTitleInput')?.value || '').trim();
     if (!value) {
-      this._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '職務名稱為必填');
+      Pages._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '職務名稱為必填');
       return null;
     }
-    this._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '');
+    Pages._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '');
     return value;
   },
 
   _validateAssignmentManagerField() {
     const value = String(document.getElementById('assignmentManagerInput')?.value || '').trim();
     if (!value) {
-      this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
+      Pages._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
       return null;
     }
-    const manager = this._findPersonnelOption(value);
+    const manager = Pages._findPersonnelOption(value);
     if (!manager) {
-      this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '指定的人員不存在於人員主檔');
+      Pages._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '指定的人員不存在於人員主檔');
       return false;
     }
-    this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
+    Pages._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
     return manager;
   },
 
   _findPersonnelOption(rawValue) {
     const value = String(rawValue || '').trim().toLowerCase();
     if (!value) return null;
-    return (this._assignmentState?.options?.personnelOptions || []).find(item =>
+    return (Pages._assignmentState?.options?.personnelOptions || []).find(item =>
       item.label.toLowerCase() === value || item.email.toLowerCase() === value
     ) || null;
   },
@@ -1064,7 +1064,7 @@ const Pages = {
   _findOrgOption(rawValue) {
     const value = String(rawValue || '').trim().toLowerCase();
     if (!value) return null;
-    return (this._assignmentState?.options?.orgOptions || []).find(item =>
+    return (Pages._assignmentState?.options?.orgOptions || []).find(item =>
       item.label.toLowerCase() === value || item.code.toLowerCase() === value
     ) || null;
   },
@@ -1077,7 +1077,7 @@ const Pages = {
   },
 
   _confirmDeleteAssignment(rowIndex) {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     if (!state) return;
     const assignment = state.allItems.find(item => item.rowIndex === rowIndex);
     if (!assignment) return;
@@ -1089,7 +1089,7 @@ const Pages = {
         try {
           await API.deleteAssignment(rowIndex);
           Components.showToast('職務配置刪除成功', 'success');
-          await this._reloadAssignmentData(false);
+          await Pages._reloadAssignmentData(false);
         } catch (err) {
           API.handleError(err);
         }
@@ -1099,12 +1099,12 @@ const Pages = {
   },
 
   async _reloadAssignmentData(resetPage) {
-    const state = this._assignmentState;
+    const state = Pages._assignmentState;
     if (!state) return;
     const latest = await API.getAssignmentList();
     state.allItems = latest;
     if (resetPage) state.currentPage = 1;
-    this._applyAssignmentFilters(false);
+    Pages._applyAssignmentFilters(false);
   },
 
   // ========================
