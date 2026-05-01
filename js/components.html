@@ -48,13 +48,14 @@ const Components = (() => {
    * @param {Function} onConfirm - 確認後的 callback
    * @param {string}   [confirmText='確認刪除'] - 確認按鈕文字
    */
-  function showModal(title, body, onConfirm, confirmText = '確認') {
+  function showModal(title, body, onConfirm, confirmText = '確認', options = {}) {
     const backdrop = document.getElementById('modalBackdrop');
     const titleEl  = document.getElementById('modalTitle');
     const bodyEl   = document.getElementById('modalBody');
     const confirmBtn = document.getElementById('modalConfirmBtn');
     const cancelBtn  = document.getElementById('modalCancelBtn');
     const closeBtn   = document.getElementById('modalClose');
+    const closeBeforeConfirm = options.closeBeforeConfirm !== false;
 
     titleEl.textContent = title;
     bodyEl.innerHTML = body;
@@ -65,12 +66,30 @@ const Components = (() => {
     confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
 
     newConfirmBtn.textContent = confirmText;
-    newConfirmBtn.onclick = () => {
-      hideModal();
-      onConfirm();
+    newConfirmBtn.onclick = async () => {
+      if (closeBeforeConfirm) {
+        hideModal();
+        onConfirm();
+        return;
+      }
+
+      newConfirmBtn.disabled = true;
+      cancelBtn.disabled = true;
+      closeBtn.disabled = true;
+      try {
+        const result = await onConfirm();
+        if (result !== false) hideModal();
+      } finally {
+        newConfirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+        closeBtn.disabled = false;
+      }
     };
 
-    const closeModal = () => hideModal();
+    const closeModal = () => {
+      if (newConfirmBtn.disabled) return;
+      hideModal();
+    };
     cancelBtn.onclick = closeModal;
     closeBtn.onclick  = closeModal;
     backdrop.onclick = (e) => { if (e.target === backdrop) closeModal(); };

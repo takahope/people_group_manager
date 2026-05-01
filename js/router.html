@@ -658,69 +658,453 @@ const Pages = {
   // 職務配置
   // ========================
   async loadAssignments(container, user, pageCtx) {
+    const canWrite = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     container.innerHTML = `
-      <div class="page-header"><h1>🗂️ 職務配置管理</h1></div>
-      <div class="card" style="margin-bottom:1rem">
-        <p style="color:var(--color-text-sub);font-size:.875rem">請從下方選擇人員查看其職務配置。</p>
-        <div class="search-bar" style="margin-top:.75rem;max-width:100%">
-          <input type="search" id="assignSearch" class="search-bar__input" placeholder="輸入 Email 或姓名搜尋人員…">
-          <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <div class="page-header">
+        <h1>🗂️ 職務配置管理</h1>
+        ${canWrite ? '<button class="btn btn--primary" id="addAssignmentBtn">＋ 新增職務配置</button>' : ''}
+      </div>
+      <div class="card filter-card">
+        <div>
+          <p style="color:var(--color-text-sub);font-size:.875rem">依人員、組織或職務快速查詢職務配置，列表採前端分頁每頁 50 筆。</p>
+        </div>
+        <div class="filter-grid">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">人員姓名 / Email</label>
+            <input type="search" id="assignmentKeyword" class="form-control" placeholder="輸入姓名或 Email">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">組織單位</label>
+            <input type="search" id="assignmentOrgQuery" class="form-control" placeholder="輸入組織名稱或代碼">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">職務名稱</label>
+            <input type="search" id="assignmentTitleQuery" class="form-control" placeholder="輸入職務關鍵字">
+          </div>
+        </div>
+        <div class="filter-actions">
+          <div class="filter-actions__group">
+            <button class="btn btn--primary" id="assignmentSearchBtn">搜尋</button>
+            <button class="btn btn--ghost" id="assignmentClearBtn">清除條件</button>
+          </div>
         </div>
       </div>
-      <div id="assignmentResult"></div>`;
+      <div id="assignmentTableSection">
+        <div class="page-loading"><div class="spinner"></div><p>載入職務配置資料…</p></div>
+      </div>`;
 
-    const all = await API.getAllPersonnel().catch(err => {
-      if (!pageCtx.isActive()) return [];
+    try {
+      const [allItems, options] = await Promise.all([
+        API.getAssignmentList(),
+        API.getAssignmentFormOptions(),
+      ]);
+      if (!pageCtx.isActive()) return;
+
+      this._assignmentState = {
+        pageCtx,
+        canWrite,
+        allItems,
+        filteredItems: allItems,
+        options,
+        filters: { keyword: '', orgQuery: '', title: '' },
+        currentPage: 1,
+        pageSize: 50,
+      };
+
+      this._bindAssignmentFilters();
+      this._applyAssignmentFilters(false);
+    } catch (err) {
+      if (!pageCtx.isActive()) return;
       console.error('loadAssignments 初始化失敗：', err);
       API.handleError(err);
-      Components.renderLoadError('assignmentResult', {
-        title: '人員搜尋初始化失敗',
-        message: '無法載入可搜尋的人員名單。',
+      Components.renderLoadError('assignmentTableSection', {
+        title: '職務配置載入失敗',
+        message: '無法取得職務配置列表或表單選項。',
         details: err.message,
         actionLabel: '重試',
         onAction: () => Router.navigateTo(pageCtx.hash),
       });
-      return [];
-    });
-    if (!pageCtx.isActive()) return;
+    }
+  },
 
-    const assignSearch = pageCtx.query('#assignSearch');
-    if (!assignSearch) return;
-    assignSearch.addEventListener('input', async e => {
-      if (!pageCtx.isActive()) return;
-      const q = e.target.value.trim().toLowerCase();
-      if (q.length < 2) return;
-      const matches = all.filter(p => p.email.includes(q) || p.name.includes(q));
-      const resultDiv = pageCtx.query('#assignmentResult');
-      if (!resultDiv) return;
-      resultDiv.innerHTML = matches.slice(0, 5).map(p => `
-        <div class="card" style="cursor:pointer;margin-bottom:.5rem" onclick="Pages._loadPersonAssignments('${p.email}','${Components.escapeHtml(p.name)}')">
-          <strong>${Components.escapeHtml(p.name)}</strong>
-          <span style="color:var(--color-text-sub);margin-left:.5rem;font-size:.85rem">${Components.escapeHtml(p.email)}</span>
-        </div>`).join('') || '<p style="color:var(--color-text-sub)">無符合人員</p>';
+  _bindAssignmentFilters() {
+    const state = this._assignmentState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const keywordInput = pageCtx.query('#assignmentKeyword');
+    const orgInput = pageCtx.query('#assignmentOrgQuery');
+    const titleInput = pageCtx.query('#assignmentTitleQuery');
+    const searchBtn = pageCtx.query('#assignmentSearchBtn');
+    const clearBtn = pageCtx.query('#assignmentClearBtn');
+    const addBtn = pageCtx.query('#addAssignmentBtn');
+
+    if (keywordInput) {
+      keywordInput.addEventListener('input', () => {
+        clearTimeout(this._assignmentKeywordTimer);
+        this._assignmentKeywordTimer = setTimeout(() => {
+          this._applyAssignmentFilters();
+        }, 300);
+      });
+    }
+
+    [keywordInput, orgInput, titleInput].forEach(input => {
+      if (!input) return;
+      input.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        this._applyAssignmentFilters();
+      });
+    });
+
+    if (searchBtn) searchBtn.onclick = () => this._applyAssignmentFilters();
+    if (clearBtn) {
+      clearBtn.onclick = () => {
+        if (keywordInput) keywordInput.value = '';
+        if (orgInput) orgInput.value = '';
+        if (titleInput) titleInput.value = '';
+        this._applyAssignmentFilters();
+      };
+    }
+    if (addBtn) addBtn.onclick = () => this._showAssignmentForm();
+  },
+
+  _applyAssignmentFilters(resetPage = true) {
+    const state = this._assignmentState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const keyword = String(pageCtx.query('#assignmentKeyword')?.value || '').trim();
+    const orgQuery = String(pageCtx.query('#assignmentOrgQuery')?.value || '').trim();
+    const title = String(pageCtx.query('#assignmentTitleQuery')?.value || '').trim();
+    const keywordLower = keyword.toLowerCase();
+    const orgLower = orgQuery.toLowerCase();
+    const titleLower = title.toLowerCase();
+
+    state.filters = { keyword, orgQuery, title };
+    state.filteredItems = state.allItems.filter(item => {
+      const matchesKeyword = !keywordLower ||
+        String(item.name || '').toLowerCase().includes(keywordLower) ||
+        String(item.email || '').toLowerCase().includes(keywordLower);
+      const matchesOrg = !orgLower ||
+        String(item.orgName || '').toLowerCase().includes(orgLower) ||
+        String(item.orgCode || '').toLowerCase().includes(orgLower);
+      const matchesTitle = !titleLower ||
+        String(item.title || '').toLowerCase().includes(titleLower);
+      return matchesKeyword && matchesOrg && matchesTitle;
+    });
+
+    if (resetPage) state.currentPage = 1;
+    this._renderAssignmentTable();
+  },
+
+  _renderAssignmentTable() {
+    const state = this._assignmentState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const section = pageCtx.query('#assignmentTableSection');
+    if (!section) return;
+
+    const total = state.filteredItems.length;
+    const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+
+    if (total === 0) {
+      section.innerHTML = `
+        <div class="card">
+          <div class="assignment-summary">
+            <div class="assignment-summary__meta">共 0 筆 / 第 1 頁，共 1 頁</div>
+          </div>
+          <div class="empty-state">
+            <div class="empty-state__icon">📭</div>
+            <p>查無符合條件的職務配置</p>
+          </div>
+        </div>`;
+      return;
+    }
+
+    const start = (state.currentPage - 1) * state.pageSize;
+    const end = start + state.pageSize;
+    const pageItems = state.filteredItems.slice(start, end);
+
+    section.innerHTML = `
+      <div class="card">
+        <div class="assignment-summary">
+          <div class="assignment-summary__meta">共 ${total} 筆 / 第 ${state.currentPage} 頁，共 ${totalPages} 頁</div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>人員</th>
+                <th>組織單位</th>
+                <th>職務名稱</th>
+                <th>直屬主管</th>
+                <th>兼任類型</th>
+                ${state.canWrite ? '<th>操作</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${pageItems.map(item => this._renderAssignmentRow(item, state.canWrite)).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${this._renderAssignmentPagination(totalPages)}
+      </div>`;
+
+    section.querySelectorAll('[data-page]').forEach(btn => {
+      btn.onclick = () => {
+        const page = Number(btn.dataset.page);
+        if (!page || page === state.currentPage) return;
+        state.currentPage = page;
+        this._renderAssignmentTable();
+      };
     });
   },
 
-  async _loadPersonAssignments(email, name) {
-    try {
-      const pageCtx = Router.getActivePageContext();
-      const assignments = await API.getAssignments(email);
-      if (!pageCtx || !pageCtx.isActive()) return;
-      const result = pageCtx.query('#assignmentResult');
-      if (!result) return;
-      result.innerHTML = `<div class="card__header"><h3 class="card__title">📋 ${Components.escapeHtml(name)} 的職務配置</h3></div>` +
-        Components.PersonCard({ email, name }, assignments) +
-        `<div id="assignTable"></div>`;
+  _renderAssignmentRow(item, canWrite) {
+    const badgeClass = ({
+      '主職': 'badge--primary',
+      '兼任': 'badge--warning',
+      '矩陣兼任': 'badge--danger',
+      '垂直兼任': 'badge--success',
+    }[item.assignmentType] || 'badge--neutral');
+    const managerPrimary = item.managerName || '未設定';
+    const managerSecondary = item.managerEmail || '—';
 
-      Components.DataTable({
-        columns: [
-          { key: 'orgCode', label: '組別代碼' },
-          { key: 'orgName', label: '組別名稱' },
-          { key: 'title',   label: '職稱' },
-          { key: 'managerName', label: '直屬主管' },
-        ],
-      }, assignments, 'assignTable');
-    } catch (err) { API.handleError(err); }
+    return `
+      <tr>
+        <td>
+          <div class="stacked-cell">
+            <span class="stacked-cell__primary">${Components.escapeHtml(item.name || '—')}</span>
+            <span class="stacked-cell__secondary">${Components.escapeHtml(item.email || '—')}</span>
+          </div>
+        </td>
+        <td>
+          <div class="stacked-cell">
+            <span class="stacked-cell__primary">${Components.escapeHtml(item.orgName || '—')}</span>
+            <span class="stacked-cell__secondary">${Components.escapeHtml(item.orgCode || '—')}</span>
+          </div>
+        </td>
+        <td>${Components.escapeHtml(item.title || '—')}</td>
+        <td>
+          <div class="stacked-cell">
+            <span class="stacked-cell__primary">${Components.escapeHtml(managerPrimary)}</span>
+            <span class="stacked-cell__secondary">${Components.escapeHtml(managerSecondary)}</span>
+          </div>
+        </td>
+        <td><span class="badge ${badgeClass}">${Components.escapeHtml(item.assignmentType || '主職')}</span></td>
+        ${canWrite ? `<td><button class="btn btn--danger btn--sm" onclick="Pages._confirmDeleteAssignment(${item.rowIndex})">刪除</button></td>` : ''}
+      </tr>`;
+  },
+
+  _renderAssignmentPagination(totalPages) {
+    const state = this._assignmentState;
+    if (!state || totalPages <= 1) return '';
+
+    const prevDisabled = state.currentPage <= 1 ? 'disabled' : '';
+    const nextDisabled = state.currentPage >= totalPages ? 'disabled' : '';
+    return `
+      <div class="pagination">
+        <div class="pagination__info">每頁 ${state.pageSize} 筆</div>
+        <button class="btn btn--ghost btn--sm" data-page="${state.currentPage - 1}" ${prevDisabled}>上一頁</button>
+        <button class="btn btn--ghost btn--sm" data-page="${state.currentPage + 1}" ${nextDisabled}>下一頁</button>
+      </div>`;
+  },
+
+  _showAssignmentForm() {
+    const state = this._assignmentState;
+    if (!state) return;
+
+    const personnelList = state.options.personnelOptions.map(item =>
+      `<option value="${Components.escapeHtml(item.label)}"></option>`
+    ).join('');
+    const orgList = state.options.orgOptions.map(item =>
+      `<option value="${Components.escapeHtml(item.label)}"></option>`
+    ).join('');
+
+    const body = `
+      <datalist id="assignmentPersonnelList">${personnelList}</datalist>
+      <datalist id="assignmentOrgList">${orgList}</datalist>
+      <div class="form-group">
+        <label class="form-label required">人員 Email / 姓名</label>
+        <input type="text" class="form-control" id="assignmentPersonInput" list="assignmentPersonnelList" placeholder="選擇姓名 (email)">
+        <div class="form-error" id="assignmentPersonError"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label required">組織單位</label>
+        <input type="text" class="form-control" id="assignmentOrgInput" list="assignmentOrgList" placeholder="選擇組織名稱 (代碼)">
+        <div class="form-error" id="assignmentOrgError"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label required">職務名稱</label>
+        <input type="text" class="form-control" id="assignmentTitleInput" maxlength="100" placeholder="輸入職務名稱">
+        <div class="form-error" id="assignmentTitleError"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">直屬主管 Email</label>
+        <input type="text" class="form-control" id="assignmentManagerInput" list="assignmentPersonnelList" placeholder="選擇主管姓名 (email)">
+        <div class="form-error" id="assignmentManagerError"></div>
+      </div>`;
+
+    Components.showModal('新增職務配置', body, async () => {
+      const confirmBtn = document.getElementById('modalConfirmBtn');
+      const originalText = confirmBtn ? confirmBtn.textContent : '儲存';
+      const payload = this._collectAssignmentFormPayload();
+      if (!payload) return false;
+
+      if (confirmBtn) confirmBtn.textContent = '儲存中...';
+      try {
+        const result = await API.addAssignment(payload);
+        Components.showToast(result?.message || '職務配置已新增', 'success');
+        if (result?.matrixConcurrencyWarning) {
+          Components.showToast('此人員新增後形成矩陣兼任，請再確認主管配置。', 'warning');
+        }
+        await this._reloadAssignmentData(true);
+        return true;
+      } catch (err) {
+        API.handleError(err);
+        return false;
+      } finally {
+        if (confirmBtn) confirmBtn.textContent = originalText;
+      }
+    }, '儲存', { closeBeforeConfirm: false });
+
+    const personInput = document.getElementById('assignmentPersonInput');
+    const orgInput = document.getElementById('assignmentOrgInput');
+    const titleInput = document.getElementById('assignmentTitleInput');
+    const managerInput = document.getElementById('assignmentManagerInput');
+
+    if (personInput) personInput.addEventListener('blur', () => this._validateAssignmentPersonField());
+    if (orgInput) orgInput.addEventListener('blur', () => this._validateAssignmentOrgField());
+    if (titleInput) titleInput.addEventListener('blur', () => this._validateAssignmentTitleField());
+    if (managerInput) managerInput.addEventListener('blur', () => this._validateAssignmentManagerField());
+  },
+
+  _collectAssignmentFormPayload() {
+    const person = this._validateAssignmentPersonField();
+    const org = this._validateAssignmentOrgField();
+    const title = this._validateAssignmentTitleField();
+    const manager = this._validateAssignmentManagerField();
+
+    if (!person || !org || !title || manager === false) return null;
+
+    return {
+      email: person.email,
+      orgCode: org.code,
+      title,
+      managerEmail: manager ? manager.email : '',
+    };
+  },
+
+  _validateAssignmentPersonField() {
+    const value = String(document.getElementById('assignmentPersonInput')?.value || '').trim();
+    if (!value) {
+      this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '請選擇人員');
+      return null;
+    }
+    const person = this._findPersonnelOption(value);
+    if (!person) {
+      this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '指定的人員不存在於人員主檔');
+      return null;
+    }
+    this._setAssignmentFieldError('assignmentPersonInput', 'assignmentPersonError', '');
+    return person;
+  },
+
+  _validateAssignmentOrgField() {
+    const value = String(document.getElementById('assignmentOrgInput')?.value || '').trim();
+    if (!value) {
+      this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '請選擇組織單位');
+      return null;
+    }
+    const org = this._findOrgOption(value);
+    if (!org) {
+      this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '指定的組織不存在於組織主檔');
+      return null;
+    }
+    this._setAssignmentFieldError('assignmentOrgInput', 'assignmentOrgError', '');
+    return org;
+  },
+
+  _validateAssignmentTitleField() {
+    const value = String(document.getElementById('assignmentTitleInput')?.value || '').trim();
+    if (!value) {
+      this._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '職務名稱為必填');
+      return null;
+    }
+    this._setAssignmentFieldError('assignmentTitleInput', 'assignmentTitleError', '');
+    return value;
+  },
+
+  _validateAssignmentManagerField() {
+    const value = String(document.getElementById('assignmentManagerInput')?.value || '').trim();
+    if (!value) {
+      this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
+      return null;
+    }
+    const manager = this._findPersonnelOption(value);
+    if (!manager) {
+      this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '指定的人員不存在於人員主檔');
+      return false;
+    }
+    this._setAssignmentFieldError('assignmentManagerInput', 'assignmentManagerError', '');
+    return manager;
+  },
+
+  _findPersonnelOption(rawValue) {
+    const value = String(rawValue || '').trim().toLowerCase();
+    if (!value) return null;
+    return (this._assignmentState?.options?.personnelOptions || []).find(item =>
+      item.label.toLowerCase() === value || item.email.toLowerCase() === value
+    ) || null;
+  },
+
+  _findOrgOption(rawValue) {
+    const value = String(rawValue || '').trim().toLowerCase();
+    if (!value) return null;
+    return (this._assignmentState?.options?.orgOptions || []).find(item =>
+      item.label.toLowerCase() === value || item.code.toLowerCase() === value
+    ) || null;
+  },
+
+  _setAssignmentFieldError(inputId, errorId, message) {
+    const input = document.getElementById(inputId);
+    const error = document.getElementById(errorId);
+    if (input) input.classList.toggle('form-control--error', !!message);
+    if (error) error.textContent = message || '';
+  },
+
+  _confirmDeleteAssignment(rowIndex) {
+    const state = this._assignmentState;
+    if (!state) return;
+    const assignment = state.allItems.find(item => item.rowIndex === rowIndex);
+    if (!assignment) return;
+
+    Components.showModal(
+      '確認刪除職務配置',
+      `<p>確定要刪除 <strong>${Components.escapeHtml(assignment.name || assignment.email)} - ${Components.escapeHtml(assignment.title || '未命名職務')}</strong> 嗎？此操作無法復原。</p>`,
+      async () => {
+        try {
+          await API.deleteAssignment(rowIndex);
+          Components.showToast('職務配置刪除成功', 'success');
+          await this._reloadAssignmentData(false);
+        } catch (err) {
+          API.handleError(err);
+        }
+      },
+      '確認刪除'
+    );
+  },
+
+  async _reloadAssignmentData(resetPage) {
+    const state = this._assignmentState;
+    if (!state) return;
+    const latest = await API.getAssignmentList();
+    state.allItems = latest;
+    if (resetPage) state.currentPage = 1;
+    this._applyAssignmentFilters(false);
   },
 
   // ========================

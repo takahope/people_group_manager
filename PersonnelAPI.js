@@ -211,6 +211,64 @@ function getAssignmentsByEmail(targetEmail) {
 }
 
 /**
+ * 取得職務配置管理頁列表資料（全量，供前端篩選/分頁）
+ *
+ * @returns {string} JSON 回應
+ */
+function getAssignmentList() {
+  try {
+    if (!checkPermission('assignment.read.all')) {
+      return errorResponse('無查詢職務配置列表的權限');
+    }
+
+    const assignments = DataService.getAllAssignments();
+    const orgs = DataService.getSheet2Data(null);
+    const items = buildAssignmentListItems(assignments, orgs);
+    return successResponse(items);
+  } catch (error) {
+    Logger.log('getAssignmentList 錯誤：' + (error.stack || error.message));
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 取得職務配置表單需要的人員與組織選項
+ *
+ * @returns {string} JSON 回應
+ */
+function getAssignmentFormOptions() {
+  try {
+    if (!checkPermission('assignment.read.all')) {
+      return errorResponse('無查詢職務配置選項的權限');
+    }
+
+    const personnel = DataService.getSheet1Data()
+      .map(p => ({
+        email: p.email,
+        name: p.name,
+        label: `${p.name} (${p.email})`,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+
+    const orgOptions = DataService.getSheet2Data(null)
+      .map(org => ({
+        code: org.code,
+        name: org.name,
+        label: `${org.name} (${org.code})`,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant'));
+
+    return successResponse({
+      personnelOptions: personnel,
+      orgOptions,
+    });
+  } catch (error) {
+    Logger.log('getAssignmentFormOptions 錯誤：' + (error.stack || error.message));
+    return errorResponse(error.message);
+  }
+}
+
+/**
  * 取得近期操作日誌（Dashboard 用）
  * 
  * @returns {string} JSON 回應
@@ -261,4 +319,48 @@ function validateAssignObj(assignObj) {
   if (!assignObj.orgCode) return '組別代碼為必填';
   if (!assignObj.title)   return '職稱為必填';
   return null;
+}
+
+function buildAssignmentListItems(assignments, orgs) {
+  const managerEmailSet = new Set(
+    orgs
+      .map(org => String(org.managerEmail || '').trim())
+      .filter(Boolean)
+  );
+  const assignmentGroups = new Map();
+
+  assignments.forEach(item => {
+    const key = String(item.email || '').trim().toLowerCase();
+    if (!assignmentGroups.has(key)) assignmentGroups.set(key, []);
+    assignmentGroups.get(key).push(item);
+  });
+
+  return assignments.map(item => ({
+    rowIndex: item.rowIndex,
+    email: item.email,
+    name: item.name,
+    orgCode: item.orgCode,
+    orgName: item.orgName,
+    title: item.title,
+    managerEmail: item.managerEmail,
+    managerName: item.managerName,
+    assignmentType: deriveAssignmentType_(item, assignmentGroups, managerEmailSet),
+  }));
+}
+
+function deriveAssignmentType_(assignment, assignmentGroups, managerEmailSet) {
+  const emailKey = String(assignment.email || '').trim().toLowerCase();
+  const personAssignments = assignmentGroups.get(emailKey) || [];
+
+  if (personAssignments.length <= 1) {
+    return managerEmailSet.has(emailKey) ? '垂直兼任' : '主職';
+  }
+
+  const distinctManagerCount = new Set(
+    personAssignments
+      .map(item => String(item.managerEmail || '').trim().toLowerCase())
+      .filter(Boolean)
+  ).size;
+
+  return distinctManagerCount > 1 ? '矩陣兼任' : '兼任';
 }

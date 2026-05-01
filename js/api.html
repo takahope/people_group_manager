@@ -121,6 +121,8 @@ const API = (() => {
     addPerson:        (obj)                  => callGAS('addPerson', obj),
     updatePerson:     (email, obj)           => callGAS('updatePerson', email, obj),
     deletePerson:     (email)                => callGAS('deletePerson', email),
+    getAssignmentList: ()                    => callGAS('getAssignmentList'),
+    getAssignmentFormOptions: ()             => callGAS('getAssignmentFormOptions'),
     getAssignments:   (email)                => callGAS('getAssignmentsByEmail', email),
     addAssignment:    (obj)                  => callGAS('addAssignment', obj),
     updateAssignment: (rowIndex, obj)        => callGAS('updateAssignment', rowIndex, obj),

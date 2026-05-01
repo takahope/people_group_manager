@@ -324,6 +324,82 @@ ul, ol { list-style: none; }
   width: 16px; height: 16px;
 }
 
+.filter-card {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .875rem;
+}
+
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filter-actions__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.form-control[list]::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+.assignment-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .75rem;
+}
+
+.assignment-summary__meta {
+  color: var(--color-text-sub);
+  font-size: .85rem;
+}
+
+.stacked-cell {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.stacked-cell__primary {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.stacked-cell__secondary {
+  color: var(--color-text-sub);
+  font-size: .8rem;
+  word-break: break-word;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+.pagination__info {
+  margin-right: auto;
+  color: var(--color-text-sub);
+  font-size: .82rem;
+}
+
 /* =============================================
    資料表格
    ============================================= */
