@@ -116,11 +116,19 @@ function resolveRole(roleCode) {
   try {
     if (!checkPermission('raci.read')) return errorResponse('無查詢角色的權限');
 
-    const role = DataService.findRoleByCode(roleCode);
-    if (!role) return errorResponse(`角色代碼 ${roleCode} 不存在`);
+    const roleRows = DataService.findRolesByCode(roleCode);
+    if (roleRows.length === 0) return errorResponse(`角色代碼 ${roleCode} 不存在`);
 
-    const entities = resolveEntityId(role.entityId);
-    return successResponse({ role, entities });
+    const primaryRole = roleRows[0];
+    const entities = roleRows.flatMap(role => resolveEntityId(role.entityId));
+    return successResponse({
+      role: {
+        roleCode: primaryRole.roleCode,
+        roleName: primaryRole.roleName,
+      },
+      bindings: roleRows,
+      entities: dedupeResolvedEntities_(entities),
+    });
   } catch (error) {
     return errorResponse(error.message);
   }
@@ -225,7 +233,10 @@ function resolveEmailToRoleCodes(email) {
 function matchesEntity(role, email, orgCodes) {
   const entityId = role.entityId;
 
-  if (entityId === 'ALL') return true;
+  if (entityId === 'ALL') {
+    const person = DataService.findPersonByEmail(email);
+    return isActivePersonnel_(person);
+  }
   if (entityId === email) return true;
   if (orgCodes.includes(entityId)) return true;
 
@@ -253,7 +264,9 @@ function resolveEntityId(entityId) {
 
   // ALL → 全體在職人員
   if (entityId === 'ALL') {
-    return DataService.getSheet1Data().map(p => ({ type: 'PERSON', ...p }));
+    return DataService.getSheet1Data()
+      .filter(isActivePersonnel_)
+      .map(p => ({ type: 'PERSON', ...p }));
   }
 
   // Email → 單一人員
@@ -280,4 +293,21 @@ function resolveEntityId(entityId) {
   if (extOrg) return [{ type: 'EXTERNAL', ...extOrg }];
 
   return [];
+}
+
+function isActivePersonnel_(person) {
+  return !!person && person.status === '在職';
+}
+
+function dedupeResolvedEntities_(entities) {
+  const seen = new Set();
+  return entities.filter(entity => {
+    const key = [
+      entity.type || '',
+      entity.email || entity.code || entity.entityId || entity.name || '',
+    ].join('::');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

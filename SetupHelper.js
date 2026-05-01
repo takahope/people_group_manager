@@ -29,7 +29,7 @@ function setupSheets() {
   const sheetConfigs = [
     {
       name:    SHEET_NAMES.PERSONNEL,
-      headers: ['信箱', '姓名', '資訊資產邏輯分組代號', '資訊資產邏輯分組名稱'],
+      headers: ['信箱', '姓名', '員工狀態'],
       note:    'Sheet 1：人員主檔 — 信箱為主鍵（Primary Key）',
     },
     {
@@ -50,7 +50,7 @@ function setupSheets() {
     {
       name:    SHEET_NAMES.ROLE_MAP,
       headers: ['角色代碼', '角色名稱', '對應實體類型', '對應實體ID/說明'],
-      note:    'Sheet 5：RACI 角色對照表 — 角色代碼為主鍵，類型支援 PERSON / GROUP / RULE / EXTERNAL',
+      note:    'Sheet 5：RACI 角色對照表 — 類型支援 PERSON / GROUP / RULE / EXTERNAL；同一角色代碼可多列綁定不同實體',
     },
     {
       name:    SHEET_NAMES.AUDIT_LOG,

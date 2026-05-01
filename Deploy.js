@@ -23,12 +23,11 @@
 const SHEET_SCHEMA = [
   {
     name: '人員主檔',
-    headers: ['信箱', '姓名', '資訊資產邏輯分組代號', '資訊資產邏輯分組名稱'],
+    headers: ['信箱', '姓名', '員工狀態'],
     notes:   [
       'Primary Key：全系統唯一，格式須符合 email 規範',
       '員工中文全名',
-      'FK → 組織架構樹.代碼；資訊資產歸屬查詢用',
-      '冗餘欄，提高可讀性',
+      '限定值：在職／育嬰／休假／留職停薪',
     ],
     headerColor: '#1a73e8',
   },
@@ -81,7 +80,7 @@ const SHEET_SCHEMA = [
     name: 'RACI角色對照表',
     headers: ['角色代碼', '角色名稱', '對應實體類型', '對應實體ID/說明'],
     notes:   [
-      'Primary Key（如 ROLE-CISO）',
+      '角色代碼（如 ROLE-CISO）；可重複，用於同碼綁定多個實體',
       '角色中文名稱',
       'PERSON / GROUP / RULE / EXTERNAL',
       'PERSON=員工信箱；GROUP=組織代碼；RULE=ALL 或 Level=N；EXTERNAL=合作/機關代碼',
@@ -192,6 +191,73 @@ function deployWithSampleData() {
   Logger.log('[deployWithSampleData] 完成');
 }
 
+/**
+ * 將舊版人員主檔（信箱 / 姓名 / 資產角色代碼 / 資產角色名稱）
+ * 轉換為新版人員主檔（信箱 / 姓名 / 員工狀態），並把資產角色搬到 RACI角色對照表。
+ *
+ * 規則：
+ * - 舊資料一律補上員工狀態「在職」
+ * - 若角色對照表已存在相同 [角色代碼, PERSON, email]，則不重複寫入
+ * - 已是新版結構的人員列不重複覆蓋
+ */
+function migratePersonnelStatusAndAssetRoles() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert(
+    '⚠ 確認搬移人員主檔欄位',
+    '此操作會將舊版人員主檔第 3/4 欄資產角色資料搬到 RACI角色對照表，並將人員主檔改為「信箱 / 姓名 / 員工狀態」。\n\n確認繼續？',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  const personnelSheet = getSheet(SHEET_NAMES.PERSONNEL);
+  const roleSheet = getSheet(SHEET_NAMES.ROLE_MAP);
+  const personnelData = personnelSheet.getDataRange().getValues();
+  const roleData = roleSheet.getDataRange().getValues();
+
+  if (personnelData.length <= 1) {
+    ui.alert('人員主檔沒有可搬移的資料。');
+    return;
+  }
+
+  const existingBindings = new Set(
+    roleData.slice(1).map(row => [row[0], row[2], row[3]].join('::'))
+  );
+  const roleRowsToAppend = [];
+  const migratedPersonnelRows = personnelData.slice(1).map(row => {
+    const email = row[0];
+    const name = row[1];
+    const thirdCol = row[2];
+    const fourthCol = row[3];
+    const alreadyNewSchema = PERSONNEL_STATUSES.has(thirdCol) && !fourthCol;
+
+    if (!alreadyNewSchema && thirdCol && fourthCol) {
+      const bindingKey = [thirdCol, 'PERSON', email].join('::');
+      if (!existingBindings.has(bindingKey)) {
+        roleRowsToAppend.push([thirdCol, fourthCol, 'PERSON', email]);
+        existingBindings.add(bindingKey);
+      }
+    }
+
+    return [email, name, PERSONNEL_STATUSES.has(thirdCol) ? thirdCol : '在職'];
+  });
+
+  personnelSheet.clearContents();
+  personnelSheet.getRange(1, 1, 1, 3).setValues([['信箱', '姓名', '員工狀態']]);
+  if (migratedPersonnelRows.length > 0) {
+    personnelSheet.getRange(2, 1, migratedPersonnelRows.length, 3).setValues(migratedPersonnelRows);
+  }
+  if (roleRowsToAppend.length > 0) {
+    appendToSheet_('RACI角色對照表', roleRowsToAppend);
+  }
+
+  SpreadsheetApp.flush();
+  ui.alert(
+    '✅ 搬移完成',
+    `人員主檔已轉為新版 3 欄。\n新增角色對照綁定 ${roleRowsToAppend.length} 筆。`,
+    ui.ButtonSet.OK
+  );
+}
+
 // ============================================================
 // 3. 結構建立（共用，Private）
 // ============================================================
@@ -280,7 +346,7 @@ function applyHeaderRow_(sheet, schema) {
 
 /**
  * 注入人員主檔測試資料
- * 欄位：信箱 | 姓名 | 資訊資產邏輯分組代號 | 資訊資產邏輯分組名稱
+ * 欄位：信箱 | 姓名 | 員工狀態
  *
  * 角色測試帳號：
  *  - ADMIN    → e002 / e003 / e004 / e005
@@ -292,19 +358,19 @@ function applyHeaderRow_(sheet, schema) {
  */
 function injectPersonnel_() {
   const data = [
-    // [信箱,              姓名,         資訊資產邏輯分組代號, 資訊資產邏輯分組名稱]
-    ['e001@example.org',        '王代表',         'ORG-ROOT',    '組織代表人'],
-    ['e002@example.org',        '李執行長',       'ORG-EXEC',    '執行長室'],
-    ['e003@example.org',        '張生醫部長',     'DEPT-BIO',    '生醫部'],
-    ['e004@example.org',        '陳資訊部長',     'DEPT-INFO',   '資訊部'],
-    ['e005@example.org',        '林行政部長',     'DEPT-ADMIN',  '行政部'],
-    ['e006@example.org',        '小明',           'GRP-REC',     '收案組'],
-    ['e007@example.org',        '小華',           'GRP-INFO',    '資訊組'],
-    ['e008@example.org',        '何人資',         'GRP-ADMIN',   '行政支援組'],
-    ['e009@example.org',        '周稽核',         'TF-GRP-AUDIT','內部稽核執行小組'],
-    ['e010@example.org',        '吳組長',         'GRP-REC',     '收案組'],
-    ['e011@example.org',        '鄭專員',         'GRP-REC',     '收案組'],
-    ['ext.vendor@example.org',  '廠商窗口',       'PARTNER-SYS', '系統開發外包廠商'],
+    // [信箱,              姓名,         員工狀態]
+    ['e001@example.org',        '王代表',         '在職'],
+    ['e002@example.org',        '李執行長',       '在職'],
+    ['e003@example.org',        '張生醫部長',     '在職'],
+    ['e004@example.org',        '陳資訊部長',     '在職'],
+    ['e005@example.org',        '林行政部長',     '在職'],
+    ['e006@example.org',        '小明',           '在職'],
+    ['e007@example.org',        '小華',           '育嬰'],
+    ['e008@example.org',        '何人資',         '在職'],
+    ['e009@example.org',        '周稽核',         '在職'],
+    ['e010@example.org',        '吳組長',         '休假'],
+    ['e011@example.org',        '鄭專員',         '留職停薪'],
+    ['ext.vendor@example.org',  '廠商窗口',       '在職'],
   ];
   appendToSheet_('人員主檔', data);
   Logger.log('[inject] 人員主檔：' + data.length + ' 筆');

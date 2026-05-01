@@ -93,7 +93,11 @@ function getAppDebugInfo() {
 function buildFullStats() {
   const personnel  = DataService.getSheet1Data();
   const orgData    = DataService.getSheet2Data(null);
-  const assignments = DataService.getAllAssignments();
+  const activeEmails = new Set(
+    personnel.filter(p => p.status === '在職').map(p => p.email)
+  );
+  const assignments = DataService.getAllAssignments()
+    .filter(a => activeEmails.has(a.email));
   const raciData   = DataService.getSheet4Data(null);
 
   return {
@@ -121,11 +125,14 @@ function buildDeptStats(managerEmail) {
 
   const deptPersonnel = DataService.getSheet1Data()
     .filter(p => deptEmails.has(p.email));
+  const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在職');
 
   return {
     scope: 'dept',
     personnel: {
-      total: deptPersonnel.length,
+      total: activeDeptPersonnel.length,
+      totalAll: deptPersonnel.length,
+      activeTotal: activeDeptPersonnel.length,
       details: deptPersonnel,
     },
     concurrentPersonnel: buildConcurrentList(
@@ -166,22 +173,41 @@ function buildPersonalStats(email) {
  * @returns {Object}
  */
 function buildPersonnelStats(personnel, assignments) {
+  const activePersonnel = personnel.filter(p => p.status === '在職');
+
   // 以職務配置判斷人員所屬類型
   const orgCodes = new Set(DataService.getSheet2Data('ORG').map(o => o.code));
   const tfCodes  = new Set(DataService.getSheet2Data('TF').map(o => o.code));
+  const activeEmails = new Set(activePersonnel.map(p => p.email));
 
   const inOrg      = new Set();
   const inTF       = new Set();
   const inExternal = new Set();
 
   assignments.forEach(a => {
+    if (!activeEmails.has(a.email)) return;
     if (orgCodes.has(a.orgCode))       inOrg.add(a.email);
     else if (tfCodes.has(a.orgCode))   inTF.add(a.email);
     else                               inExternal.add(a.email);
   });
 
+  const statusBreakdown = {
+    在職: 0,
+    育嬰: 0,
+    休假: 0,
+    留職停薪: 0,
+  };
+  personnel.forEach(person => {
+    if (Object.prototype.hasOwnProperty.call(statusBreakdown, person.status)) {
+      statusBreakdown[person.status] += 1;
+    }
+  });
+
   return {
-    total:    personnel.length,
+    total:    activePersonnel.length,
+    totalAll: personnel.length,
+    activeTotal: activePersonnel.length,
+    statusBreakdown,
     orgCount: inOrg.size,
     tfCount:  inTF.size,
     extCount: inExternal.size,

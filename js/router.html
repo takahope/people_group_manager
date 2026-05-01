@@ -483,17 +483,21 @@ const Pages = {
   async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
+    const statusOptions = ['全部', '在職', '育嬰', '休假', '留職停薪'];
 
     container.innerHTML = `
       <div class="page-header">
         <h1>👥 人員管理</h1>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <div class="search-bar">
-            <input type="search" id="personnelSearch" class="search-bar__input" placeholder="搜尋姓名、信箱…">
+            <input type="search" id="personnelSearch" class="search-bar__input" placeholder="搜尋姓名、信箱、狀態…">
             <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           </div>
           ${canWrite ? '<button class="btn btn--primary" id="addPersonBtn">＋ 新增人員</button>' : ''}
         </div>
+      </div>
+      <div id="personnelStatusFilters" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+        ${statusOptions.map(status => `<button class="btn btn--ghost btn--sm" data-status="${status}">${status}</button>`).join('')}
       </div>
       <div id="personnelTable">
         <div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>
@@ -504,14 +508,37 @@ const Pages = {
       let data = await API.getAllPersonnel();
       if (!pageCtx.isActive()) return;
       let filtered = data;
+      let activeStatus = '全部';
+
+      const statusBadgeClass = (status) => ({
+        '在職': 'badge--success',
+        '育嬰': 'badge--warning',
+        '休假': 'badge--neutral',
+        '留職停薪': 'badge--danger',
+      }[status] || 'badge--neutral');
+
+      const applyFilters = (searchQuery = '') => {
+        const q = searchQuery.toLowerCase();
+        filtered = data.filter(p => {
+          const matchesStatus = activeStatus === '全部' || p.status === activeStatus;
+          const matchesSearch = !q ||
+            p.name.toLowerCase().includes(q) ||
+            p.email.toLowerCase().includes(q) ||
+            (p.status || '').toLowerCase().includes(q);
+          return matchesStatus && matchesSearch;
+        });
+      };
 
       const renderTable = () => {
         Components.DataTable({
           columns: [
             { key: 'email', label: '信箱' },
             { key: 'name',  label: '姓名' },
-            { key: 'assetGroupCode', label: '資產分組代號' },
-            { key: 'assetGroupName', label: '資產分組名稱' },
+            {
+              key: 'status',
+              label: '員工狀態',
+              render: (value) => `<span class="badge ${statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
+            },
           ],
           actions: canWrite ? (row) => `
             <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
@@ -526,14 +553,28 @@ const Pages = {
       const searchInput = pageCtx.query('#personnelSearch');
       if (!searchInput) return;
       searchInput.addEventListener('input', e => {
-        const q = e.target.value.toLowerCase();
-        filtered = data.filter(p =>
-          p.name.toLowerCase().includes(q) ||
-          p.email.toLowerCase().includes(q) ||
-          (p.assetGroupName || '').toLowerCase().includes(q)
-        );
+        applyFilters(e.target.value);
         renderTable();
       });
+
+      const filterBar = pageCtx.query('#personnelStatusFilters');
+      if (filterBar) {
+        const updateFilterButtons = () => {
+          filterBar.querySelectorAll('[data-status]').forEach(btn => {
+            const selected = btn.dataset.status === activeStatus;
+            btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
+          });
+        };
+        filterBar.querySelectorAll('[data-status]').forEach(btn => {
+          btn.onclick = () => {
+            activeStatus = btn.dataset.status;
+            applyFilters(searchInput.value);
+            updateFilterButtons();
+            renderTable();
+          };
+        });
+        updateFilterButtons();
+      }
 
       if (canWrite) {
         const addBtn = pageCtx.query('#addPersonBtn');
@@ -568,20 +609,19 @@ const Pages = {
         <input type="text" class="form-control" id="pName" value="${existingPerson?.name || ''}" maxlength="50">
       </div>
       <div class="form-group">
-        <label class="form-label required">資訊資產邏輯分組代號</label>
-        <input type="text" class="form-control" id="pAssetCode" value="${existingPerson?.assetGroupCode || ''}">
-      </div>
-      <div class="form-group">
-        <label class="form-label required">資訊資產邏輯分組名稱</label>
-        <input type="text" class="form-control" id="pAssetName" value="${existingPerson?.assetGroupName || ''}">
+        <label class="form-label required">員工狀態</label>
+        <select class="form-control" id="pStatus">
+          ${['在職', '育嬰', '休假', '留職停薪'].map(status => `
+            <option value="${status}" ${existingPerson?.status === status || (!existingPerson && status === '在職') ? 'selected' : ''}>${status}</option>
+          `).join('')}
+        </select>
       </div>`;
 
     Components.showModal(isEdit ? '編輯人員' : '新增人員', body, async () => {
       const obj = {
-        email:         document.getElementById('pEmail').value.trim(),
-        name:          document.getElementById('pName').value.trim(),
-        assetGroupCode: document.getElementById('pAssetCode').value.trim(),
-        assetGroupName: document.getElementById('pAssetName').value.trim(),
+        email:  document.getElementById('pEmail').value.trim(),
+        name:   document.getElementById('pName').value.trim(),
+        status: document.getElementById('pStatus').value,
       };
       try {
         if (isEdit) { await API.updatePerson(existingPerson.email, obj); }

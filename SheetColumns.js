@@ -7,13 +7,13 @@
  */
 
 const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'EXTERNAL']);
+const PERSONNEL_STATUSES = new Set(['在職', '育嬰', '休假', '留職停薪']);
 
 const COL = {
   PERSONNEL: {
     EMAIL: 0,
     NAME: 1,
-    ASSET_GROUP_CODE: 2,
-    ASSET_GROUP_NAME: 3,
+    STATUS: 2,
   },
   ORG: {
     TYPE: 0,

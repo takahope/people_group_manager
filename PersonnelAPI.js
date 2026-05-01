@@ -15,7 +15,7 @@
 /**
  * 新增人員至 Sheet 1
  * 
- * @param {{email, name, assetGroupCode, assetGroupName}} personObj
+ * @param {{email, name, status}} personObj
  * @returns {string} JSON 回應
  */
 function addPerson(personObj) {
@@ -40,7 +40,7 @@ function addPerson(personObj) {
  * 更新 Sheet 1 指定人員資料
  * 
  * @param {string} email
- * @param {{name, assetGroupCode, assetGroupName}} personObj
+ * @param {{name, status}} personObj
  * @returns {string} JSON 回應
  */
 function updatePerson(email, personObj) {
@@ -244,8 +244,8 @@ function validatePersonObj(personObj) {
   if (!personObj.name || personObj.name.length > 50) {
     return '姓名為必填且不超過 50 字元';
   }
-  if (!personObj.assetGroupCode) {
-    return '資訊資產邏輯分組代號為必填';
+  if (!PERSONNEL_STATUSES.has(personObj.status)) {
+    return '員工狀態必須為在職、育嬰、休假或留職停薪';
   }
   return null;
 }

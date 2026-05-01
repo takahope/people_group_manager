@@ -28,7 +28,7 @@ const CACHE_KEYS = {
 /**
  * 取得所有人員資料
  * 
- * @returns {Array<{email, name, assetGroupCode, assetGroupName}>}
+ * @returns {Array<{email, name, status}>}
  */
 function getSheet1Data() {
   const rows = getSheetRows(SHEET_NAMES.PERSONNEL);
@@ -56,11 +56,14 @@ function findPersonByEmail(email) {
  */
 function rowToPersonnel(row) {
   return {
-    email:          row[COL.PERSONNEL.EMAIL],
-    name:           row[COL.PERSONNEL.NAME],
-    assetGroupCode: row[COL.PERSONNEL.ASSET_GROUP_CODE],
-    assetGroupName: row[COL.PERSONNEL.ASSET_GROUP_NAME],
+    email:  row[COL.PERSONNEL.EMAIL],
+    name:   row[COL.PERSONNEL.NAME],
+    status: normalizePersonnelStatus(row[COL.PERSONNEL.STATUS]),
   };
+}
+
+function normalizePersonnelStatus(rawStatus) {
+  return PERSONNEL_STATUSES.has(rawStatus) ? rawStatus : '在職';
 }
 
 // =============================================
@@ -255,6 +258,16 @@ function findRoleByCode(roleCode) {
   return all.find(r => r.roleCode === roleCode) || null;
 }
 
+/**
+ * 依角色代碼取得所有角色定義列
+ *
+ * @param {string} roleCode
+ * @returns {Array<Object>}
+ */
+function findRolesByCode(roleCode) {
+  return getSheet5Data().filter(r => r.roleCode === roleCode);
+}
+
 // =============================================
 // 寫入操作：人員主檔 (Sheet 1)
 // =============================================
@@ -262,15 +275,14 @@ function findRoleByCode(roleCode) {
 /**
  * 新增人員至 Sheet 1
  * 
- * @param {{email, name, assetGroupCode, assetGroupName}} personObj
+ * @param {{email, name, status}} personObj
  */
 function appendPersonnel(personObj) {
   const sheet = getSheet(SHEET_NAMES.PERSONNEL);
   sheet.appendRow([
     personObj.email,
     personObj.name,
-    personObj.assetGroupCode,
-    personObj.assetGroupName,
+    normalizePersonnelStatus(personObj.status),
   ]);
 }
 
@@ -292,8 +304,7 @@ function updatePersonnelByEmail(email, personObj) {
     sheet.getRange(rowNum, 1, 1, widthFromColMap(COL.PERSONNEL)).setValues([[
       personObj.email,
       personObj.name,
-      personObj.assetGroupCode,
-      personObj.assetGroupName,
+      normalizePersonnelStatus(personObj.status),
     ]]);
     return true;
   }
@@ -486,6 +497,7 @@ function getSheetRows(sheetName) {
 const DataService = {
   getSheet1Data,
   findPersonByEmail,
+  findRolesByCode,
   getSheet2Data,
   findOrgByCode,
   getSheet3DataByEmail,
