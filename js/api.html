@@ -114,6 +114,7 @@ const API = (() => {
     // 身份驗證
     getCurrentUser:   ()         => callGAS('getCurrentUser'),
     getSessionInfo:   ()         => callGAS('getSessionInfo'),
+    clearCurrentUserSession: ()  => callGAS('clearCurrentUserSession'),
     checkPermission:  (feature)  => callGAS('checkPermission', feature),
 
     // 人員管理

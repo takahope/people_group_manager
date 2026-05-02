@@ -26,6 +26,7 @@
     <div class="top-nav__user" id="userInfo" aria-live="polite">
       <span class="user-name" id="userName">載入中...</span>
       <span class="role-badge" id="roleBadge"></span>
+      <button class="btn btn--ghost btn--sm" id="reloadAuthBtn">清除權限快取</button>
       <button class="btn btn--ghost btn--sm" id="logoutBtn">登出</button>
     </div>
   </header>
@@ -81,6 +82,7 @@
   <!-- 前端 JS（依序載入） -->
   <?!= include('js/api'); ?>
   <?!= include('js/components'); ?>
+  <?!= include('js/reload'); ?>
   <?!= include('js/router'); ?>
 </body>
 </html>

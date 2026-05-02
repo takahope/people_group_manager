@@ -114,6 +114,31 @@ function getSessionInfo() {
   }
 }
 
+/**
+ * 清除目前登入者的 Session 快取，供前端強制重新驗證權限時使用
+ *
+ * @returns {string} JSON — { success, data: { cleared, email } }
+ */
+function clearCurrentUserSession() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) return errorResponse('未登入，無法清除 Session');
+
+    const key = SESSION_KEY_PREFIX + email;
+    const props = PropertiesService.getUserProperties();
+    const existed = !!props.getProperty(key);
+    props.deleteProperty(key);
+
+    return successResponse({
+      cleared: existed,
+      email,
+    });
+  } catch (error) {
+    Logger.log('clearCurrentUserSession 錯誤：' + error.message);
+    return errorResponse('清除 Session 失敗：' + error.message);
+  }
+}
+
 // =============================================
 // 角色解析（Private）
 // =============================================
@@ -301,6 +326,7 @@ const AuthService = {
   getCurrentUser,
   checkPermission,
   getSessionInfo,
+  clearCurrentUserSession,
   resolveUserRole,
   determineRole,
   hasPermission,

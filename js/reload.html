@@ -1,0 +1,39 @@
+<script>
+/**
+ * reload.js — 清除 Apps Script 權限 Session 快取後重新載入頁面
+ */
+
+const Reload = (() => {
+
+  function init() {
+    const btn = document.getElementById('reloadAuthBtn');
+    if (!btn) return;
+
+    btn.onclick = async () => {
+      const confirmed = window.confirm('要清除目前帳號的 8 小時權限快取並重新載入頁面嗎？');
+      if (!confirmed) return;
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '清除中...';
+
+      try {
+        await API.clearCurrentUserSession();
+        Components.showToast('權限快取已清除，正在重新載入...', 'success');
+        window.setTimeout(() => location.reload(), 300);
+      } catch (error) {
+        API.handleError(error);
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    };
+  }
+
+  return { init };
+
+})();
+
+window.addEventListener('DOMContentLoaded', () => {
+  Reload.init();
+});
+</script>
