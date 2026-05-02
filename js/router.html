@@ -104,11 +104,6 @@ const Router = (() => {
       // 漢堡選單（手機版）
       initMobileMenu();
 
-      // 登出按鈕
-      document.getElementById('logoutBtn').onclick = () => {
-        if (confirm('確認要登出嗎？')) google.script.host.close();
-      };
-
     } catch (error) {
       console.error('Router 初始化失敗：', error);
       Components.showToast('頁面初始化失敗，請重新整理', 'error');
