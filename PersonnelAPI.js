@@ -102,10 +102,20 @@ function addAssignment(assignObj) {
   const org = DataService.findOrgByCode(assignObj.orgCode);
   if (!org) return errorResponse(`組別代碼 ${assignObj.orgCode} 不存在`);
 
-  // 偵測矩陣兼任（新舊直屬主管不同）
+  // 以與列表相同的主職/兼任規則模擬新增後結果
   const existing = DataService.getSheet3DataByEmail(assignObj.email);
-  const hasDiffManager = existing.length > 0 &&
-    existing.some(a => a.managerEmail !== assignObj.managerEmail);
+  const pendingAssignment = {
+    ...assignObj,
+    name: person.name,
+    orgName: org.name,
+    managerName: assignObj.managerEmail
+      ? ((DataService.findPersonByEmail(assignObj.managerEmail) || {}).name || assignObj.managerName || '')
+      : '',
+    rowIndex: -1,
+  };
+  const simulatedAssignments = existing.concat([pendingAssignment]);
+  const simulatedTypeMap = buildAssignmentTypeMap_(simulatedAssignments);
+  const hasMatrixWarning = simulatedTypeMap.get(getAssignmentIdentityKey_(pendingAssignment)) === '矩陣兼任';
 
   DataService.appendAssignment({
     ...assignObj,
@@ -116,7 +126,7 @@ function addAssignment(assignObj) {
 
   return successResponse({
     message: '職務配置新增成功',
-    matrixConcurrencyWarning: hasDiffManager,
+    matrixConcurrencyWarning: hasMatrixWarning,
   });
 }
 
@@ -222,8 +232,7 @@ function getAssignmentList() {
     }
 
     const assignments = DataService.getAllAssignments();
-    const orgs = DataService.getSheet2Data(null);
-    const items = buildAssignmentListItems(assignments, orgs);
+    const items = buildAssignmentListItems(assignments);
     return successResponse(items);
   } catch (error) {
     Logger.log('getAssignmentList 錯誤：' + (error.stack || error.message));
@@ -321,19 +330,8 @@ function validateAssignObj(assignObj) {
   return null;
 }
 
-function buildAssignmentListItems(assignments, orgs) {
-  const managerEmailSet = new Set(
-    orgs
-      .map(org => String(org.managerEmail || '').trim())
-      .filter(Boolean)
-  );
-  const assignmentGroups = new Map();
-
-  assignments.forEach(item => {
-    const key = String(item.email || '').trim().toLowerCase();
-    if (!assignmentGroups.has(key)) assignmentGroups.set(key, []);
-    assignmentGroups.get(key).push(item);
-  });
+function buildAssignmentListItems(assignments) {
+  const assignmentTypeMap = buildAssignmentTypeMap_(assignments);
 
   return assignments.map(item => ({
     rowIndex: item.rowIndex,
@@ -344,23 +342,79 @@ function buildAssignmentListItems(assignments, orgs) {
     title: item.title,
     managerEmail: item.managerEmail,
     managerName: item.managerName,
-    assignmentType: deriveAssignmentType_(item, assignmentGroups, managerEmailSet),
+    assignmentType: assignmentTypeMap.get(getAssignmentIdentityKey_(item)) || '兼任',
   }));
 }
 
-function deriveAssignmentType_(assignment, assignmentGroups, managerEmailSet) {
-  const emailKey = String(assignment.email || '').trim().toLowerCase();
-  const personAssignments = assignmentGroups.get(emailKey) || [];
+function buildAssignmentTypeMap_(assignments) {
+  const groupedAssignments = new Map();
+  const typeMap = new Map();
 
-  if (personAssignments.length <= 1) {
-    return managerEmailSet.has(emailKey) ? '垂直兼任' : '主職';
-  }
+  assignments.forEach(item => {
+    const emailKey = String(item.email || '').trim().toLowerCase();
+    if (!groupedAssignments.has(emailKey)) groupedAssignments.set(emailKey, []);
+    groupedAssignments.get(emailKey).push(item);
+  });
 
-  const distinctManagerCount = new Set(
-    personAssignments
-      .map(item => String(item.managerEmail || '').trim().toLowerCase())
-      .filter(Boolean)
-  ).size;
+  groupedAssignments.forEach(personAssignments => {
+    const primaryType = getPrimaryAssignmentType_(personAssignments);
+    const primaryAssignments = primaryType
+      ? personAssignments.filter(item => classifyAssignmentKind_(item.orgCode) === primaryType)
+      : [];
+    const primaryManagerEmails = new Set(
+      primaryAssignments
+        .map(item => String(item.managerEmail || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
 
-  return distinctManagerCount > 1 ? '矩陣兼任' : '兼任';
+    personAssignments.forEach(item => {
+      const itemKey = getAssignmentIdentityKey_(item);
+      const itemKind = classifyAssignmentKind_(item.orgCode);
+
+      if (primaryType && itemKind === primaryType) {
+        typeMap.set(itemKey, '主職');
+        return;
+      }
+
+      if (!primaryType) {
+        typeMap.set(itemKey, '兼任');
+        return;
+      }
+
+      const managerEmail = String(item.managerEmail || '').trim().toLowerCase();
+      if (!managerEmail || primaryManagerEmails.size === 0) {
+        typeMap.set(itemKey, '兼任');
+        return;
+      }
+
+      typeMap.set(itemKey, primaryManagerEmails.has(managerEmail) ? '垂直兼任' : '矩陣兼任');
+    });
+  });
+
+  return typeMap;
+}
+
+function getPrimaryAssignmentType_(personAssignments) {
+  if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'PRE')) return 'PRE';
+  if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'DEPT')) return 'DEPT';
+  if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'GRP')) return 'GRP';
+  return null;
+}
+
+function classifyAssignmentKind_(orgCode) {
+  const normalized = String(orgCode || '').trim().toUpperCase();
+  if (normalized === 'PRE') return 'PRE';
+  if (normalized.startsWith('DEPT-')) return 'DEPT';
+  if (normalized.startsWith('GRP-')) return 'GRP';
+  return 'OTHER';
+}
+
+function getAssignmentIdentityKey_(assignment) {
+  return [
+    String(assignment.email || '').trim().toLowerCase(),
+    String(assignment.orgCode || '').trim().toUpperCase(),
+    String(assignment.title || '').trim(),
+    String(assignment.managerEmail || '').trim().toLowerCase(),
+    String(assignment.rowIndex || ''),
+  ].join('||');
 }
