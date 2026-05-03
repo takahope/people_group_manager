@@ -93,6 +93,7 @@ function getAppDebugInfo() {
 function buildFullStats() {
   const personnel  = DataService.getSheet1Data();
   const orgData    = DataService.getSheet2Data(null);
+  const orgGraph   = analyzeOrgGraph(orgData);
   const activeEmails = new Set(
     personnel.filter(p => p.status === '在職').map(p => p.email)
   );
@@ -102,8 +103,9 @@ function buildFullStats() {
 
   return {
     scope: 'full',
+    warnings: orgGraph.warnings,
     personnel: buildPersonnelStats(personnel, assignments),
-    orgDistribution: buildOrgDistribution(orgData, assignments),
+    orgDistribution: buildOrgDistribution(orgData, assignments, orgGraph.descendantsByCode),
     concurrentPersonnel: buildConcurrentList(assignments),
     raciCoverage: buildRaciCoverage(raciData),
     auditAlerts: buildQuickAuditAlerts(),
@@ -129,6 +131,7 @@ function buildDeptStats(managerEmail) {
 
   return {
     scope: 'dept',
+    warnings: [],
     personnel: {
       total: activeDeptPersonnel.length,
       totalAll: deptPersonnel.length,
@@ -154,6 +157,7 @@ function buildPersonalStats(email) {
 
   return {
     scope: 'personal',
+    warnings: [],
     person,
     assignments,
     concurrentCount: assignments.length > 1 ? assignments.length : 0,
@@ -220,49 +224,19 @@ function buildPersonnelStats(personnel, assignments) {
  * 
  * @param {Array} orgData
  * @param {Array} assignments
+ * @param {Map<string, Set<string>>} descendantsByCode
  * @returns {Array<{deptName, count}>}
  */
-function buildOrgDistribution(orgData, assignments) {
+function buildOrgDistribution(orgData, assignments, descendantsByCode) {
   const level3Orgs = orgData.filter(o => o.level === 3);
-  const orgTree    = buildSubtreeCodeMap(orgData); // code → 所有子節點 code 集合
 
   return level3Orgs.map(dept => {
-    const subtreeCodes = orgTree.get(dept.code) || new Set([dept.code]);
+    const subtreeCodes = descendantsByCode.get(dept.code) || new Set([dept.code]);
     const count = new Set(
       assignments.filter(a => subtreeCodes.has(a.orgCode)).map(a => a.email)
     ).size;
     return { deptCode: dept.code, deptName: dept.name, count };
   }).filter(d => d.count > 0);
-}
-
-/**
- * 建立組織樹子節點 Map
- * key: 節點 code，value: 包含自身及所有子孫節點的 code Set
- * 
- * @param {Array} orgData
- * @returns {Map<string, Set<string>>}
- */
-function buildSubtreeCodeMap(orgData) {
-  // 先建立 parent → children 的 Map
-  const children = new Map();
-  orgData.forEach(node => {
-    if (!children.has(node.parentCode)) children.set(node.parentCode, []);
-    children.get(node.parentCode).push(node.code);
-  });
-
-  // 對每個節點 DFS 收集所有子孫
-  const result = new Map();
-  function collectDescendants(code) {
-    if (result.has(code)) return result.get(code);
-    const set = new Set([code]);
-    (children.get(code) || []).forEach(child => {
-      collectDescendants(child).forEach(c => set.add(c));
-    });
-    result.set(code, set);
-    return set;
-  }
-  orgData.forEach(node => collectDescendants(node.code));
-  return result;
 }
 
 /**

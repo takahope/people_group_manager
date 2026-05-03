@@ -38,6 +38,7 @@ function runFullAudit() {
       { id: 'role_code_exists',          label: '角色代碼存在性', fn: _checkRoleCodeExists },
       { id: 'person_foreign_key',        label: '人員外鍵完整性', fn: _checkPersonForeignKey },
       { id: 'org_foreign_key',           label: '組別外鍵完整性', fn: _checkOrgForeignKey },
+      { id: 'org_cycle',                 label: '組織樹無迴圈',   fn: _checkOrgCycle },
       { id: 'manager_cycle',             label: '主管鏈無迴圈',   fn: _checkManagerCycle },
     ];
 
@@ -106,6 +107,13 @@ function checkManagerCycle() {
   try {
     if (!checkPermission('audit.run')) return errorResponse('無權限');
     return successResponse(_checkManagerCycle());
+  } catch (e) { return errorResponse(e.message); }
+}
+
+function checkOrgCycle() {
+  try {
+    if (!checkPermission('audit.run')) return errorResponse('無權限');
+    return successResponse(_checkOrgCycle());
   } catch (e) { return errorResponse(e.message); }
 }
 
@@ -203,7 +211,26 @@ function _checkOrgForeignKey() {
 }
 
 /**
- * 5. 主管鏈無迴圈：使用 DFS 拓撲排序檢查是否有循環引用
+ * 5. 組織樹無迴圈：Sheet 2 的 parentCode 不可形成循環
+ *
+ * @returns {Array<{cycle, severity}>}
+ */
+function _checkOrgCycle() {
+  const orgData = DataService.getSheet2Data(null);
+  const analysis = analyzeOrgGraph(orgData);
+  return analysis.warnings
+    .filter(warning => warning.type === 'cycle' || warning.type === 'self_parent')
+    .map(warning => ({
+      code: warning.code,
+      parentCode: warning.parentCode,
+      cycle: warning.path || [warning.code, warning.code],
+      severity: SEVERITY.CRITICAL,
+      message: warning.message,
+    }));
+}
+
+/**
+ * 6. 主管鏈無迴圈：使用 DFS 拓撲排序檢查是否有循環引用
  * 
  * 演算法說明：
  * - 建立有向圖：員工 → 主管
@@ -317,7 +344,7 @@ function isPersonEntity(entityId) {
  * @returns {boolean}
  */
 function isCritical(checkId) {
-  return ['accountability_uniqueness', 'manager_cycle'].includes(checkId);
+  return ['accountability_uniqueness', 'org_cycle', 'manager_cycle'].includes(checkId);
 }
 
 // =============================================

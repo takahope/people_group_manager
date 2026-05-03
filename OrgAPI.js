@@ -18,47 +18,11 @@ function getOrgTree(orgType) {
     if (!checkPermission('org.read')) return errorResponse('無查詢組織架構的權限');
 
     const flatList = DataService.getSheet2Data(orgType);
-    const tree = buildTree(flatList);
+    const tree = buildSafeOrgTree(flatList);
     return successResponse(tree);
   } catch (error) {
     return errorResponse(error.message);
   }
-}
-
-/**
- * 將平面清單轉為巢狀樹狀結構
- * 
- * 提取此函式以隔離「樹建構邏輯」，讓 getOrgTree 保持精簡
- * 演算法：Map-based O(n)，避免 O(n²) 巢狀迴圈
- * 
- * @param {Array} flatList
- * @returns {Array} 根節點陣列
- */
-function buildTree(flatList) {
-  const nodeMap = new Map();
-  const roots = [];
-
-  // 第一遍：建立所有節點的 Map（含空的 children 陣列）
-  flatList.forEach(node => {
-    nodeMap.set(node.code, { ...node, children: [] });
-  });
-
-  // 第二遍：依 parentCode 掛上子節點
-  nodeMap.forEach(node => {
-    if (!node.parentCode) {
-      roots.push(node);
-      return;
-    }
-    const parent = nodeMap.get(node.parentCode);
-    if (parent) {
-      parent.children.push(node);
-    } else {
-      // 父節點不存在（資料異常），放入根層
-      roots.push(node);
-    }
-  });
-
-  return roots;
 }
 
 // =============================================
@@ -171,7 +135,7 @@ function addOrgNode(nodeObj) {
   try {
     if (!checkPermission('org.write')) return errorResponse('無新增組織節點的權限');
 
-    const validationError = validateOrgNode(nodeObj);
+    const validationError = validateOrgNode(nodeObj, null);
     if (validationError) return errorResponse(validationError);
 
     // 確認代碼不重複
@@ -199,8 +163,18 @@ function updateOrgNode(code, nodeObj) {
     if (!checkPermission('org.write')) return errorResponse('無編輯組織節點的權限');
     if (!code) return errorResponse('缺少 code 參數');
 
+    const existing = DataService.findOrgByCode(code);
+    if (!existing) return errorResponse(`找不到組織節點：${code}`);
+
+    if (!nodeObj || nodeObj.code !== code) {
+      return errorResponse('目前不支援變更既有組織代碼');
+    }
+
+    const validationError = validateOrgNode(nodeObj, code);
+    if (validationError) return errorResponse(validationError);
+
     const updated = DataService.updateOrgNodeByCode(code, nodeObj);
-    if (!updated) return errorResponse(`找不到組織節點：${code}`);
+    if (!updated) return errorResponse(`更新組織節點失敗：${code}`);
 
     DataService.appendAuditLog('UPDATE', `組織節點: ${code}`, JSON.stringify(nodeObj));
     return successResponse({ message: '組織節點更新成功' });
@@ -213,10 +187,47 @@ function updateOrgNode(code, nodeObj) {
 // 驗證輔助
 // =============================================
 
-function validateOrgNode(nodeObj) {
+function validateOrgNode(nodeObj, currentCode) {
   if (!nodeObj.type  || !['ORG','TF','PARTNER','GOV'].includes(nodeObj.type)) return '組織類型無效';
   if (!nodeObj.level || isNaN(nodeObj.level)) return '層級為必填數字';
   if (!nodeObj.code)  return '代碼為必填';
   if (!nodeObj.name)  return '名稱為必填';
+  if (nodeObj.parentCode && nodeObj.parentCode === nodeObj.code) return 'parentCode 不可指向自己';
+
+  if (nodeObj.parentCode) {
+    const parent = DataService.findOrgByCode(nodeObj.parentCode);
+    if (!parent) return `上層組織代碼 ${nodeObj.parentCode} 不存在`;
+  }
+
+  const validationError = validateOrgCycle_(nodeObj, currentCode);
+  if (validationError) return validationError;
+
   return null;
+}
+
+function validateOrgCycle_(nodeObj, currentCode) {
+  const nextOrgData = DataService.getSheet2Data(null).map(item => (
+    item.code === currentCode ? { ...item, ...nodeObj } : item
+  ));
+
+  if (!currentCode) {
+    nextOrgData.push({
+      type: nodeObj.type,
+      level: Number(nodeObj.level),
+      code: nodeObj.code,
+      name: nodeObj.name,
+      alias: nodeObj.alias || '',
+      parentCode: nodeObj.parentCode || '',
+      managerEmail: nodeObj.managerEmail || '',
+      managerName: nodeObj.managerName || '',
+    });
+  }
+
+  const analysis = analyzeOrgGraph(nextOrgData);
+  if (analysis.cycles.length === 0) return null;
+
+  const relatedCycle = analysis.cycles.find(path => path.includes(nodeObj.code));
+  if (!relatedCycle) return null;
+
+  return `此設定會形成組織循環：${relatedCycle.join(' -> ')}`;
 }

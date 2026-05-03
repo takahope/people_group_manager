@@ -384,6 +384,7 @@ const Pages = {
       <div class="page-header">
         <h1>📊 儀表板</h1>
       </div>
+      <div id="dashboardWarnings"></div>
       <div class="stat-grid" id="statGrid">
         ${['人員統計','組織分佈','兼任人員','RACI 覆蓋率','稽核警示','近期異動']
           .map((_, i) => `<div class="stat-card"><div class="stat-card__label">載入中...</div><div class="stat-card__value">—</div></div>`).join('')}
@@ -395,6 +396,7 @@ const Pages = {
     try {
       const stats = await API.getDashboardStats();
       if (!pageCtx.isActive()) return;
+      const warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
       const logs = stats.recentLogs || [];
       const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
       const concurrentCount = Array.isArray(stats.concurrentPersonnel)
@@ -407,6 +409,16 @@ const Pages = {
         : '—';
       const statGrid = pageCtx.query('#statGrid');
       if (!statGrid) return;
+      const warningDiv = pageCtx.query('#dashboardWarnings');
+      if (warningDiv) {
+        warningDiv.innerHTML = warnings.length > 0 ? `
+          <div class="card" style="margin-bottom:1rem;border-color:#f0c36d;background:#fff8e6">
+            <div class="card__header"><h3 class="card__title">資料警示</h3></div>
+            <div style="color:var(--color-text-sub);font-size:.9rem;line-height:1.7">
+              ${warnings.map(w => `<div>${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+            </div>
+          </div>` : '';
+      }
       statGrid.innerHTML = `
         <div class="stat-card"><div class="stat-card__label">在職總人數</div><div class="stat-card__value">${total}</div></div>
         <div class="stat-card"><div class="stat-card__label">兼任人員</div><div class="stat-card__value">${concurrentCount}</div></div>
@@ -1113,17 +1125,31 @@ const Pages = {
           `<button class="btn ${i===0?'btn--primary':'btn--ghost'} btn--sm" data-type="${i===0?'':t}">${{ORG:'行政組織',TF:'任務編組',PARTNER:'合作單位',GOV:'外部機關','全部':'全部'}[t]||t}</button>`
         ).join('')}
       </div>
+      <div id="orgWarnings"></div>
       <div id="orgTreeContainer" class="card"></div>`;
 
     const renderTree = async (type) => {
       if (!pageCtx.isActive()) return;
       const treeDiv = pageCtx.query('#orgTreeContainer');
+      const warningDiv = pageCtx.query('#orgWarnings');
       if (!treeDiv) return;
       treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
+      if (warningDiv) warningDiv.innerHTML = '';
       try {
-        const tree = await API.getOrgTree(type || null);
+        const result = await API.getOrgTree(type || null);
         if (!pageCtx.isActive()) return;
+        const tree = Array.isArray(result?.nodes) ? result.nodes : [];
+        const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
         treeDiv.innerHTML = '';
+        if (warningDiv && warnings.length > 0) {
+          warningDiv.innerHTML = `
+            <div class="card" style="margin-bottom:1rem;border-color:#f0c36d;background:#fff8e6">
+              <div class="card__header"><h3 class="card__title">組織資料警示</h3></div>
+              <div style="color:var(--color-text-sub);font-size:.9rem;line-height:1.7">
+                ${warnings.map(w => `<div>${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+              </div>
+            </div>`;
+        }
         if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
         tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0)));
       } catch (err) {
