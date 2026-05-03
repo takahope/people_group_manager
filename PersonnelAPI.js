@@ -357,9 +357,9 @@ function buildAssignmentTypeMap_(assignments) {
   });
 
   groupedAssignments.forEach(personAssignments => {
-    const primaryType = getPrimaryAssignmentType_(personAssignments);
-    const primaryAssignments = primaryType
-      ? personAssignments.filter(item => classifyAssignmentKind_(item.orgCode) === primaryType)
+    const primaryMode = getPrimaryAssignmentMode_(personAssignments);
+    const primaryAssignments = isExplicitPrimaryKind_(primaryMode)
+      ? personAssignments.filter(item => classifyAssignmentKind_(item.orgCode) === primaryMode)
       : [];
     const primaryManagerEmails = new Set(
       primaryAssignments
@@ -371,12 +371,17 @@ function buildAssignmentTypeMap_(assignments) {
       const itemKey = getAssignmentIdentityKey_(item);
       const itemKind = classifyAssignmentKind_(item.orgCode);
 
-      if (primaryType && itemKind === primaryType) {
+      if (isFallbackPrimaryMode_(primaryMode)) {
         typeMap.set(itemKey, '主職');
         return;
       }
 
-      if (!primaryType) {
+      if (isExplicitPrimaryKind_(primaryMode) && itemKind === primaryMode) {
+        typeMap.set(itemKey, '主職');
+        return;
+      }
+
+      if (!primaryMode) {
         typeMap.set(itemKey, '兼任');
         return;
       }
@@ -394,19 +399,40 @@ function buildAssignmentTypeMap_(assignments) {
   return typeMap;
 }
 
-function getPrimaryAssignmentType_(personAssignments) {
+function getPrimaryAssignmentMode_(personAssignments) {
   if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'PRE')) return 'PRE';
+  if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'CEO')) return 'CEO';
   if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'DEPT')) return 'DEPT';
   if (personAssignments.some(item => classifyAssignmentKind_(item.orgCode) === 'GRP')) return 'GRP';
+
+  const managerEmails = personAssignments
+    .map(item => String(item.managerEmail || '').trim().toLowerCase());
+  const nonEmptyManagerEmails = [...new Set(managerEmails.filter(Boolean))];
+  if (nonEmptyManagerEmails.length === 1) return 'FALLBACK_SINGLE_MANAGER';
+  if (managerEmails.length > 0 && managerEmails.every(email => !email)) return 'FALLBACK_NO_MANAGER';
+
   return null;
 }
 
 function classifyAssignmentKind_(orgCode) {
   const normalized = String(orgCode || '').trim().toUpperCase();
   if (normalized === 'PRE') return 'PRE';
+  if (normalized === 'CEO') return 'CEO';
   if (normalized.startsWith('DEPT-')) return 'DEPT';
   if (normalized.startsWith('GRP-')) return 'GRP';
   return 'OTHER';
+}
+
+function isExplicitPrimaryKind_(primaryMode) {
+  return primaryMode === 'PRE'
+    || primaryMode === 'CEO'
+    || primaryMode === 'DEPT'
+    || primaryMode === 'GRP';
+}
+
+function isFallbackPrimaryMode_(primaryMode) {
+  return primaryMode === 'FALLBACK_SINGLE_MANAGER'
+    || primaryMode === 'FALLBACK_NO_MANAGER';
 }
 
 function getAssignmentIdentityKey_(assignment) {
