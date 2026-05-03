@@ -438,15 +438,47 @@ const Components = (() => {
           <span style="color:var(--color-text-sub);font-size:.75rem">▼</span>
         </div>
         <div class="audit-check__body" ${check.passed ? 'hidden' : ''}>
-          ${check.issues.map(issue => `
-            <div class="audit-issue audit-issue--${issue.severity === 'Critical' ? 'critical' : 'warning'}">
-              <strong>${issue.severity}</strong>：${escapeHtml(issue.message || '')}
-              ${issue.itemCode ? `<code style="display:block;font-size:.78rem;margin-top:.25rem">${escapeHtml(issue.itemCode)}</code>` : ''}
-            </div>`).join('')}
+          ${check.issues.map(issue => renderAuditIssue(check, issue)).join('')}
         </div>
       `;
       checksDiv.appendChild(el);
     });
+  }
+
+  function renderAuditIssue(check, issue) {
+    if (check.id === 'org_foreign_key') {
+      return renderOrgForeignKeyIssue(issue);
+    }
+
+    return `
+      <div class="audit-issue audit-issue--${issue.severity === 'Critical' ? 'critical' : 'warning'}">
+        <strong>${issue.severity}</strong>：${escapeHtml(issue.message || '')}
+        ${issue.itemCode ? `<code style="display:block;font-size:.78rem;margin-top:.25rem">${escapeHtml(issue.itemCode)}</code>` : ''}
+      </div>`;
+  }
+
+  function renderOrgForeignKeyIssue(issue) {
+    const severityClass = issue.severity === 'Critical' ? 'critical' : 'warning';
+    return `
+      <div class="audit-issue audit-issue--${severityClass} audit-orgfk">
+        <div class="audit-orgfk__header">
+          <span class="audit-orgfk__severity">${escapeHtml(issue.severity || 'Warning')}</span>
+          <span class="audit-orgfk__row">第 ${escapeHtml(String(issue.rowIndex || '—'))} 列</span>
+        </div>
+        <div class="audit-orgfk__title">${escapeHtml(issue.message || '')}</div>
+        <div class="audit-orgfk__grid">
+          <div><span class="audit-orgfk__label">員工</span><span class="audit-orgfk__value">${escapeHtml(issue.name || '—')}</span></div>
+          <div><span class="audit-orgfk__label">Email</span><span class="audit-orgfk__value">${escapeHtml(issue.email || '—')}</span></div>
+          <div><span class="audit-orgfk__label">所屬組別代碼</span><code class="audit-orgfk__code">${escapeHtml(issue.orgCode || '—')}</code></div>
+          <div><span class="audit-orgfk__label">所屬組別名稱</span><span class="audit-orgfk__value">${escapeHtml(issue.orgName || '—')}</span></div>
+          <div><span class="audit-orgfk__label">職稱</span><span class="audit-orgfk__value">${escapeHtml(issue.title || '—')}</span></div>
+          <div><span class="audit-orgfk__label">直屬主管</span><span class="audit-orgfk__value">${escapeHtml(issue.managerName || '未設定')}${issue.managerEmail ? ` (${escapeHtml(issue.managerEmail)})` : ''}</span></div>
+        </div>
+        <div class="audit-orgfk__suggestion">
+          <span class="audit-orgfk__label">建議修正</span>
+          <p>${escapeHtml(issue.suggestion || '請檢查人員職務配置表與組織架構表。')}</p>
+        </div>
+      </div>`;
   }
 
   // =============================================

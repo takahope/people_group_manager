@@ -201,12 +201,17 @@ function _checkOrgForeignKey() {
   return assignments
     .filter(a => !validOrgCodes.has(a.orgCode))
     .map(a => ({
-      email:    a.email,
-      name:     a.name,
-      orgCode:  a.orgCode,
-      rowIndex: a.rowIndex,
-      severity: SEVERITY.WARNING,
-      message:  `組別代碼 ${a.orgCode} 在組織架構表中不存在`,
+      email:        a.email,
+      name:         a.name,
+      orgCode:      a.orgCode,
+      orgName:      a.orgName || '',
+      title:        a.title || '',
+      managerEmail: a.managerEmail || '',
+      managerName:  a.managerName || '',
+      rowIndex:     a.rowIndex,
+      severity:     SEVERITY.WARNING,
+      message:      `職務配置第 ${a.rowIndex} 列：員工 ${a.name || '未命名'}（${a.email || '—'}）填寫的所屬組別代碼 ${a.orgCode} 在組織架構表中不存在。`,
+      suggestion:   `請檢查人員職務配置表第 ${a.rowIndex} 列的「所屬組別代碼」是否拼寫錯誤，並比對組織架構表是否已建立代碼 ${a.orgCode}；若尚未建檔，請先新增該組織節點。`,
     }));
 }
 
