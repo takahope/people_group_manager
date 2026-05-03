@@ -230,10 +230,10 @@ function _checkOrgCycle() {
 }
 
 /**
- * 6. 主管鏈無迴圈：使用 DFS 拓撲排序檢查是否有循環引用
+ * 6. 主管鏈無迴圈：以「每筆職務配置」為節點檢查主管鏈是否循環
  * 
  * 演算法說明：
- * - 建立有向圖：員工 → 主管
+ * - 建立有向圖：職務配置列 → 該列主管對應的所有職務配置列
  * - 對每個節點執行 DFS，追蹤「當前路徑」中的節點
  * - 若在 DFS 中再次遇到路徑上的節點，即找到循環
  * 
@@ -241,29 +241,58 @@ function _checkOrgCycle() {
  */
 function _checkManagerCycle() {
   const assignments = DataService.getAllAssignments();
-
-  // 建立 email → managerEmail 的 Map（可能一對多，取第一筆）
-  const managerOf = new Map();
-  assignments.forEach(a => {
-    if (a.email && a.managerEmail && !managerOf.has(a.email)) {
-      managerOf.set(a.email, a.managerEmail);
-    }
+  const nodes = assignments
+    .filter(a => a.email)
+    .map(a => ({
+      rowIndex: a.rowIndex,
+      email: a.email,
+      name: a.name || '',
+      orgCode: a.orgCode || '',
+      orgName: a.orgName || '',
+      managerEmail: a.managerEmail || '',
+      managerName: a.managerName || '',
+    }));
+  const nodesByEmail = new Map();
+  nodes.forEach(node => {
+    const emailKey = String(node.email || '').trim().toLowerCase();
+    if (!nodesByEmail.has(emailKey)) nodesByEmail.set(emailKey, []);
+    nodesByEmail.get(emailKey).push(node);
   });
 
-  const visited = new Set();  // 已確認無迴圈的節點
+  const adjacency = new Map();
+  nodes.forEach(node => {
+    const managerKey = String(node.managerEmail || '').trim().toLowerCase();
+    adjacency.set(node.rowIndex, managerKey ? (nodesByEmail.get(managerKey) || []) : []);
+  });
+
+  const visited = new Set();
+  const seenCycles = new Set();
   const cycles = [];
 
-  managerOf.forEach((_, startEmail) => {
-    if (visited.has(startEmail)) return;
-    const cycle = detectCycle(startEmail, managerOf, new Set(), []);
+  nodes.forEach(startNode => {
+    if (visited.has(startNode.rowIndex)) return;
+    const cycle = detectManagerCycle_(startNode, adjacency, new Set(), []);
     if (cycle) {
-      cycles.push({
-        cycle,
-        severity: SEVERITY.CRITICAL,
-        message:  `發現主管鏈循環引用：${cycle.join(' → ')}`,
-      });
+      const cycleKey = canonicalizeCycleKey_(cycle);
+      if (!seenCycles.has(cycleKey)) {
+        seenCycles.add(cycleKey);
+        cycles.push({
+          cycle: cycle.map(formatManagerCycleNode_),
+          cycleDetails: cycle.map(node => ({
+            rowIndex: node.rowIndex,
+            email: node.email,
+            name: node.name,
+            orgCode: node.orgCode,
+            orgName: node.orgName,
+            managerEmail: node.managerEmail,
+            managerName: node.managerName,
+          })),
+          severity: SEVERITY.CRITICAL,
+          message: `發現主管鏈循環引用：${cycle.map(formatManagerCycleNode_).join(' → ')}`,
+        });
+      }
     }
-    visited.add(startEmail);
+    visited.add(startNode.rowIndex);
   });
 
   return cycles;
@@ -276,31 +305,52 @@ function _checkManagerCycle() {
 /**
  * DFS 循環偵測
  * 
- * @param {string} email
- * @param {Map}    managerOf
+ * @param {Object} node
+ * @param {Map}    adjacency
  * @param {Set}    currentPath - 當前 DFS 路徑上的節點（偵測循環用）
  * @param {Array}  pathArr     - 路徑陣列（用於回傳可讀的循環路徑）
  * @returns {Array|null} 循環路徑或 null
  */
-function detectCycle(email, managerOf, currentPath, pathArr) {
-  if (currentPath.has(email)) {
-    // 找到循環，回傳從循環起點開始的路徑
-    const cycleStart = pathArr.indexOf(email);
-    return [...pathArr.slice(cycleStart), email];
+function detectManagerCycle_(node, adjacency, currentPath, pathArr) {
+  if (currentPath.has(node.rowIndex)) {
+    const cycleStart = pathArr.findIndex(item => item.rowIndex === node.rowIndex);
+    return [...pathArr.slice(cycleStart), node];
   }
 
-  const manager = managerOf.get(email);
-  if (!manager) return null; // 到達根節點，無循環
+  const nextNodes = adjacency.get(node.rowIndex) || [];
+  if (nextNodes.length === 0) return null;
 
-  currentPath.add(email);
-  pathArr.push(email);
+  currentPath.add(node.rowIndex);
+  pathArr.push(node);
 
-  const result = detectCycle(manager, managerOf, currentPath, pathArr);
+  for (let i = 0; i < nextNodes.length; i++) {
+    const result = detectManagerCycle_(nextNodes[i], adjacency, currentPath, pathArr);
+    if (result) {
+      currentPath.delete(node.rowIndex);
+      pathArr.pop();
+      return result;
+    }
+  }
 
-  currentPath.delete(email);
+  currentPath.delete(node.rowIndex);
   pathArr.pop();
+  return null;
+}
 
-  return result;
+function formatManagerCycleNode_(node) {
+  const email = node.email || 'unknown';
+  const orgCode = node.orgCode || '—';
+  return `${email} (${orgCode})`;
+}
+
+function canonicalizeCycleKey_(cycle) {
+  const ids = cycle.slice(0, -1).map(node => String(node.rowIndex));
+  if (ids.length === 0) return '';
+
+  const rotations = ids.map((_, idx) => ids.slice(idx).concat(ids.slice(0, idx)).join('>'));
+  const reversed = [...ids].reverse();
+  const reverseRotations = reversed.map((_, idx) => reversed.slice(idx).concat(reversed.slice(0, idx)).join('>'));
+  return rotations.concat(reverseRotations).sort()[0];
 }
 
 /**
