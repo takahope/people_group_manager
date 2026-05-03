@@ -370,6 +370,7 @@ function buildAssignmentTypeMap_(assignments) {
     personAssignments.forEach(item => {
       const itemKey = getAssignmentIdentityKey_(item);
       const itemKind = classifyAssignmentKind_(item.orgCode);
+      const managerEmail = String(item.managerEmail || '').trim().toLowerCase();
 
       if (isFallbackPrimaryMode_(primaryMode)) {
         typeMap.set(itemKey, '主職');
@@ -386,7 +387,11 @@ function buildAssignmentTypeMap_(assignments) {
         return;
       }
 
-      const managerEmail = String(item.managerEmail || '').trim().toLowerCase();
+      if (isExplicitPrimaryKind_(primaryMode) && isTfAssignment_(item.orgCode)) {
+        typeMap.set(itemKey, primaryManagerEmails.has(managerEmail) ? '兼任' : '矩陣兼任');
+        return;
+      }
+
       if (!managerEmail || primaryManagerEmails.size === 0) {
         typeMap.set(itemKey, '兼任');
         return;
@@ -433,6 +438,10 @@ function isExplicitPrimaryKind_(primaryMode) {
 function isFallbackPrimaryMode_(primaryMode) {
   return primaryMode === 'FALLBACK_SINGLE_MANAGER'
     || primaryMode === 'FALLBACK_NO_MANAGER';
+}
+
+function isTfAssignment_(orgCode) {
+  return String(orgCode || '').trim().toUpperCase().startsWith('TF-');
 }
 
 function getAssignmentIdentityKey_(assignment) {
