@@ -116,14 +116,46 @@ function buildErrorPage(message) {
  * @returns {Spreadsheet}
  */
 function getSpreadsheet() {
-  const active = getBoundSpreadsheet_();
-  if (active) return active;
+  return resolveSpreadsheetBinding_().spreadsheet;
+}
 
-  if (!SPREADSHEET_ID || SPREADSHEET_ID === 'YOUR_SPREADSHEET_ID_HERE') {
+/**
+ * 解析目前實際使用中的 Spreadsheet 與來源。
+ *
+ * @returns {{
+ *   spreadsheet: Spreadsheet,
+ *   source: 'bound'|'id_fallback',
+ *   configuredSpreadsheetId: string,
+ *   boundSpreadsheetId: string,
+ *   fallbackSpreadsheetId: string,
+ * }}
+ */
+function resolveSpreadsheetBinding_() {
+  const active = getBoundSpreadsheet_();
+  const configuredSpreadsheetId = String(SPREADSHEET_ID || '').trim();
+  const hasConfiguredId = configuredSpreadsheetId && configuredSpreadsheetId !== 'YOUR_SPREADSHEET_ID_HERE';
+
+  if (active) {
+    return {
+      spreadsheet: active,
+      source: 'bound',
+      configuredSpreadsheetId,
+      boundSpreadsheetId: active.getId(),
+      fallbackSpreadsheetId: hasConfiguredId ? configuredSpreadsheetId : '',
+    };
+  }
+
+  if (!hasConfiguredId) {
     throw new Error('此專案未綁定 Google Sheet，且尚未設定有效的 SPREADSHEET_ID');
   }
 
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  return {
+    spreadsheet: SpreadsheetApp.openById(configuredSpreadsheetId),
+    source: 'id_fallback',
+    configuredSpreadsheetId,
+    boundSpreadsheetId: '',
+    fallbackSpreadsheetId: configuredSpreadsheetId,
+  };
 }
 
 /**
@@ -186,4 +218,32 @@ function getBoundSpreadsheet_() {
     Logger.log('getBoundSpreadsheet_ 無法取得綁定試算表：' + error.message);
     return null;
   }
+}
+
+/**
+ * 將目前程式實際綁定的 Spreadsheet 資訊寫入 execution logs。
+ *
+ * 用途：排查 Web App 與預期 Google Sheet 不一致的問題。
+ */
+function logSpreadsheetBindingInfo() {
+  const binding = resolveSpreadsheetBinding_();
+  const ss = binding.spreadsheet;
+  const info = {
+    source: binding.source,
+    spreadsheet: {
+      id: ss.getId(),
+      name: ss.getName(),
+      url: ss.getUrl(),
+    },
+    configuredSpreadsheetId: binding.configuredSpreadsheetId || '',
+    boundSpreadsheetId: binding.boundSpreadsheetId || '',
+    fallbackSpreadsheetId: binding.fallbackSpreadsheetId || '',
+    idsMatch: binding.configuredSpreadsheetId
+      ? binding.configuredSpreadsheetId === ss.getId()
+      : null,
+  };
+  const payload = JSON.stringify(info);
+
+  Logger.log('Spreadsheet binding info: ' + payload);
+  console.log('Spreadsheet binding info: ' + payload);
 }
