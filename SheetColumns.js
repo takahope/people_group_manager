@@ -7,7 +7,7 @@
  */
 
 const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'EXTERNAL']);
-const PERSONNEL_STATUSES = new Set(['在職', '育嬰', '休假', '留職停薪']);
+const PERSONNEL_STATUSES = new Set(['在職', '育嬰假', '休假', '留職停薪', '合作', '倫理委員會']);
 
 const COL = {
   PERSONNEL: {
