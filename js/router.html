@@ -1198,13 +1198,14 @@ const Pages = {
         `成員清單｜${node.name || node.code}`,
         '<div class="page-loading"><div class="spinner"></div><p>載入成員資料…</p></div>',
         () => true,
-        '關閉'
+        '關閉',
+        {
+          modalClassName: 'modal--wide',
+          bodyClassName: 'modal__body--dense',
+          hideConfirm: true,
+          cancelText: '關閉',
+        }
       );
-
-      const confirmBtn = document.getElementById('modalConfirmBtn');
-      const cancelBtn = document.getElementById('modalCancelBtn');
-      if (confirmBtn) confirmBtn.style.display = 'none';
-      if (cancelBtn) cancelBtn.textContent = '關閉';
 
       try {
         const result = await API.getOrgMemberList(node.code);
