@@ -82,7 +82,7 @@ function getOrgMemberListPrefetchData() {
  * 取得所有駐站管理員清單（含兼任識別）
  * 
  * 查詢邏輯：
- * 1. 找出 Sheet 3 中收案組（GRP-REC）的所有直屬主管 Email（去重）
+ * 1. 找出 Sheet 3 中所有 orgCode 以 GRP-CO- 開頭成員的直屬主管 Email（去重）
  * 2. 對每位站長查詢其在 Sheet 3 的職務，判斷是否兼任
  * 
  * @returns {string} JSON 回應
@@ -91,8 +91,9 @@ function getStationManagers() {
   try {
     if (!checkPermission('station.read')) return errorResponse('無查詢駐站管理員的權限');
 
-    // 1. 取出所有收案組成員的直屬主管 Email（去重）
-    const recMembers = DataService.getSheet3DataByOrgCode('GRP-REC');
+    // 1. 取出所有 GRP-CO-* 成員的直屬主管 Email（去重）
+    const recMembers = DataService.getAllAssignments()
+      .filter(a => isStationOrgCode_(a.orgCode));
     const managerEmails = [...new Set(
       recMembers.map(a => a.managerEmail).filter(Boolean)
     )];
@@ -116,17 +117,14 @@ function getStationManagers() {
 function buildStationManagerCard(email) {
   const person = DataService.findPersonByEmail(email);
   const assignments = DataService.getSheet3DataByEmail(email);
+  const title = '駐站管理員';
 
-  // 取得在收案組的職稱
-  const recAssignment = assignments.find(a => a.orgCode === 'GRP-REC');
-  const title = recAssignment ? recAssignment.title : '';
+  // 兼任標記：除了 GRP-CO-* 以外還有其他職務配置則視為兼任
+  const isConcurrent = assignments.some(a => !isStationOrgCode_(a.orgCode));
 
-  // 兼任標記：職稱非「駐站管理員」則表示兼任
-  const isConcurrent = title !== '駐站管理員';
-
-  // 下屬成員：以此 email 為直屬主管的收案組成員
-  const members = DataService.getSheet3DataByOrgCode('GRP-REC')
-    .filter(a => a.managerEmail === email);
+  // 下屬成員：以此 email 為直屬主管的所有 GRP-CO-* 成員
+  const members = DataService.getAllAssignments()
+    .filter(a => isStationOrgCode_(a.orgCode) && a.managerEmail === email);
 
   return {
     email,
@@ -135,6 +133,10 @@ function buildStationManagerCard(email) {
     isConcurrent,
     members:      members.map(m => ({ email: m.email, name: m.name, title: m.title })),
   };
+}
+
+function isStationOrgCode_(orgCode) {
+  return String(orgCode || '').trim().toUpperCase().startsWith('GRP-CO-');
 }
 
 // =============================================
