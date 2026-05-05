@@ -682,15 +682,15 @@ const Pages = {
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">人員姓名 / Email</label>
-            <select id="assignmentPersonFilter" class="form-control"></select>
+            <div id="assignmentPersonFilter" class="multi-select"></div>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">組織單位</label>
-            <select id="assignmentOrgFilter" class="form-control"></select>
+            <div id="assignmentOrgFilter" class="multi-select"></div>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">職務名稱</label>
-            <select id="assignmentTitleFilter" class="form-control"></select>
+            <div id="assignmentTitleFilter" class="multi-select"></div>
           </div>
         </div>
         <div class="filter-actions">
@@ -718,7 +718,7 @@ const Pages = {
         filteredItems: allItems,
         filterOptions,
         options,
-        filters: { keyword: '', personEmail: '', orgCode: '', title: '' },
+        filters: { keyword: '', personEmails: [], orgCodes: [], titles: [] },
         currentPage: 1,
         pageSize: 200,
       };
@@ -745,31 +745,15 @@ const Pages = {
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
     const keywordInput = pageCtx.query('#assignmentKeyword');
-    const personSelect = pageCtx.query('#assignmentPersonFilter');
-    const orgSelect = pageCtx.query('#assignmentOrgFilter');
-    const titleSelect = pageCtx.query('#assignmentTitleFilter');
+    const personFilter = pageCtx.query('#assignmentPersonFilter');
+    const orgFilter = pageCtx.query('#assignmentOrgFilter');
+    const titleFilter = pageCtx.query('#assignmentTitleFilter');
     const clearBtn = pageCtx.query('#assignmentClearBtn');
     const addBtn = pageCtx.query('#addAssignmentBtn');
-    const { people = [], orgs = [], titles = [] } = state.filterOptions || {};
 
-    if (personSelect) {
-      personSelect.innerHTML = [
-        '<option value="">全部人員</option>',
-        ...people.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
-      ].join('');
-    }
-    if (orgSelect) {
-      orgSelect.innerHTML = [
-        '<option value="">全部組織</option>',
-        ...orgs.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
-      ].join('');
-    }
-    if (titleSelect) {
-      titleSelect.innerHTML = [
-        '<option value="">全部職務</option>',
-        ...titles.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
-      ].join('');
-    }
+    Pages._renderAssignmentMultiSelect('personEmails', personFilter, state.filterOptions?.people || [], '全部人員');
+    Pages._renderAssignmentMultiSelect('orgCodes', orgFilter, state.filterOptions?.orgs || [], '全部組織');
+    Pages._renderAssignmentMultiSelect('titles', titleFilter, state.filterOptions?.titles || [], '全部職務');
 
     if (keywordInput) {
       keywordInput.addEventListener('input', () => {
@@ -780,19 +764,23 @@ const Pages = {
       });
     }
 
-    [personSelect, orgSelect, titleSelect].forEach(select => {
-      if (!select) return;
-      select.addEventListener('change', () => {
-        Pages._applyAssignmentFilters();
-      });
+    [
+      ['personEmails', personFilter, '全部人員'],
+      ['orgCodes', orgFilter, '全部組織'],
+      ['titles', titleFilter, '全部職務'],
+    ].forEach(([filterKey, root, placeholder]) => {
+      Pages._bindAssignmentMultiSelect(filterKey, root, placeholder);
     });
 
     if (clearBtn) {
       clearBtn.onclick = () => {
         if (keywordInput) keywordInput.value = '';
-        if (personSelect) personSelect.value = '';
-        if (orgSelect) orgSelect.value = '';
-        if (titleSelect) titleSelect.value = '';
+        state.filters.personEmails = [];
+        state.filters.orgCodes = [];
+        state.filters.titles = [];
+        Pages._resetAssignmentMultiSelect(personFilter, 'personEmails', '全部人員');
+        Pages._resetAssignmentMultiSelect(orgFilter, 'orgCodes', '全部組織');
+        Pages._resetAssignmentMultiSelect(titleFilter, 'titles', '全部職務');
         Pages._applyAssignmentFilters();
       };
     }
@@ -805,12 +793,12 @@ const Pages = {
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
     const keyword = String(pageCtx.query('#assignmentKeyword')?.value || '').trim();
-    const personEmail = String(pageCtx.query('#assignmentPersonFilter')?.value || '').trim().toLowerCase();
-    const orgCode = String(pageCtx.query('#assignmentOrgFilter')?.value || '').trim().toUpperCase();
-    const title = String(pageCtx.query('#assignmentTitleFilter')?.value || '').trim();
     const keywordLower = keyword.toLowerCase();
+    const personEmails = new Set((state.filters.personEmails || []).map(v => String(v || '').trim().toLowerCase()).filter(Boolean));
+    const orgCodes = new Set((state.filters.orgCodes || []).map(v => String(v || '').trim().toUpperCase()).filter(Boolean));
+    const titles = new Set((state.filters.titles || []).map(v => String(v || '').trim()).filter(Boolean));
 
-    state.filters = { keyword, personEmail, orgCode, title };
+    state.filters.keyword = keyword;
     state.filteredItems = state.allItems.filter(item => {
       const matchesKeyword = !keywordLower ||
         String(item.name || '').toLowerCase().includes(keywordLower) ||
@@ -818,17 +806,169 @@ const Pages = {
         String(item.orgName || '').toLowerCase().includes(keywordLower) ||
         String(item.orgCode || '').toLowerCase().includes(keywordLower) ||
         String(item.title || '').toLowerCase().includes(keywordLower);
-      const matchesPerson = !personEmail ||
-        String(item.email || '').trim().toLowerCase() === personEmail;
-      const matchesOrg = !orgCode ||
-        String(item.orgCode || '').trim().toUpperCase() === orgCode;
-      const matchesTitle = !title ||
-        String(item.title || '').trim() === title;
+      const matchesPerson = personEmails.size === 0 ||
+        personEmails.has(String(item.email || '').trim().toLowerCase());
+      const matchesOrg = orgCodes.size === 0 ||
+        orgCodes.has(String(item.orgCode || '').trim().toUpperCase());
+      const matchesTitle = titles.size === 0 ||
+        titles.has(String(item.title || '').trim());
       return matchesKeyword && matchesPerson && matchesOrg && matchesTitle;
     });
 
     if (resetPage) state.currentPage = 1;
     Pages._renderAssignmentTable();
+  },
+
+  _renderAssignmentMultiSelect(filterKey, root, options, placeholder) {
+    if (!root) return;
+    root.innerHTML = `
+      <button type="button" class="multi-select__trigger" data-role="trigger">${Components.escapeHtml(placeholder)}</button>
+      <div class="multi-select__panel" data-role="panel" hidden>
+        <div class="multi-select__search-wrap">
+          <input type="search" class="form-control multi-select__search" data-role="search" placeholder="搜尋選項">
+        </div>
+        <div class="multi-select__toolbar">
+          <button type="button" class="btn btn--ghost btn--sm" data-role="clear">清空</button>
+        </div>
+        <div class="multi-select__options" data-role="options"></div>
+      </div>`;
+    root.dataset.filterKey = filterKey;
+    root.dataset.placeholder = placeholder;
+    root._assignmentOptions = Array.isArray(options) ? options : [];
+    Pages._refreshAssignmentMultiSelect(root);
+  },
+
+  _bindAssignmentMultiSelect(filterKey, root, placeholder) {
+    if (!root) return;
+    const state = Pages._assignmentState;
+    const trigger = root.querySelector('[data-role="trigger"]');
+    const panel = root.querySelector('[data-role="panel"]');
+    const searchInput = root.querySelector('[data-role="search"]');
+    const optionsEl = root.querySelector('[data-role="options"]');
+    const clearBtn = root.querySelector('[data-role="clear"]');
+
+    if (trigger) {
+      trigger.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        Pages._toggleAssignmentMultiSelect(root);
+      };
+    }
+    if (searchInput) {
+      searchInput.addEventListener('click', e => e.stopPropagation());
+      searchInput.addEventListener('input', () => Pages._refreshAssignmentMultiSelect(root));
+    }
+    if (panel) panel.addEventListener('click', e => e.stopPropagation());
+    if (clearBtn) {
+      clearBtn.onclick = e => {
+        e.preventDefault();
+        state.filters[filterKey] = [];
+        if (searchInput) searchInput.value = '';
+        Pages._refreshAssignmentMultiSelect(root);
+        Pages._applyAssignmentFilters();
+      };
+    }
+    if (optionsEl) {
+      optionsEl.addEventListener('change', e => {
+        const checkbox = e.target;
+        if (!checkbox || checkbox.type !== 'checkbox') return;
+        const selected = new Set(state.filters[filterKey] || []);
+        if (checkbox.checked) selected.add(checkbox.value);
+        else selected.delete(checkbox.value);
+        state.filters[filterKey] = [...selected];
+        Pages._refreshAssignmentMultiSelect(root);
+        Pages._applyAssignmentFilters();
+      });
+    }
+
+    if (!Pages._assignmentMultiSelectOutsideHandler) {
+      Pages._assignmentMultiSelectOutsideHandler = event => {
+        document.querySelectorAll('.multi-select.is-open').forEach(el => {
+          if (el.contains(event.target)) return;
+          el.classList.remove('is-open');
+          const panelEl = el.querySelector('[data-role="panel"]');
+          if (panelEl) panelEl.hidden = true;
+        });
+      };
+      document.addEventListener('click', Pages._assignmentMultiSelectOutsideHandler);
+    }
+
+    Pages._updateAssignmentMultiSelectTrigger(root, state.filters[filterKey] || [], placeholder);
+  },
+
+  _toggleAssignmentMultiSelect(root) {
+    if (!root) return;
+    const panel = root.querySelector('[data-role="panel"]');
+    const searchInput = root.querySelector('[data-role="search"]');
+    const isOpen = root.classList.contains('is-open');
+
+    document.querySelectorAll('.multi-select.is-open').forEach(el => {
+      if (el === root) return;
+      el.classList.remove('is-open');
+      const otherPanel = el.querySelector('[data-role="panel"]');
+      if (otherPanel) otherPanel.hidden = true;
+    });
+
+    root.classList.toggle('is-open', !isOpen);
+    if (panel) panel.hidden = isOpen;
+    if (!isOpen && searchInput) searchInput.focus();
+  },
+
+  _refreshAssignmentMultiSelect(root) {
+    if (!root) return;
+    const state = Pages._assignmentState;
+    const filterKey = root.dataset.filterKey;
+    const placeholder = root.dataset.placeholder || '全部';
+    const searchValue = String(root.querySelector('[data-role="search"]')?.value || '').trim().toLowerCase();
+    const options = root._assignmentOptions || [];
+    const selectedValues = new Set((state?.filters?.[filterKey] || []).map(value => String(value)));
+    const filteredOptions = options.filter(item =>
+      !searchValue ||
+      String(item.label || '').toLowerCase().includes(searchValue) ||
+      String(item.value || '').toLowerCase().includes(searchValue)
+    );
+    const optionsEl = root.querySelector('[data-role="options"]');
+
+    if (optionsEl) {
+      optionsEl.innerHTML = filteredOptions.length > 0
+        ? filteredOptions.map(item => `
+          <label class="multi-select__option">
+            <input type="checkbox" value="${Components.escapeHtml(item.value)}" ${selectedValues.has(String(item.value)) ? 'checked' : ''}>
+            <span>${Components.escapeHtml(item.label)}</span>
+          </label>`).join('')
+        : '<div class="multi-select__empty">查無符合的選項</div>';
+    }
+
+    Pages._updateAssignmentMultiSelectTrigger(root, [...selectedValues], placeholder);
+  },
+
+  _updateAssignmentMultiSelectTrigger(root, selectedValues, placeholder) {
+    if (!root) return;
+    const trigger = root.querySelector('[data-role="trigger"]');
+    if (!trigger) return;
+    const options = root._assignmentOptions || [];
+    const selected = options.filter(item => selectedValues.includes(String(item.value)));
+
+    if (selected.length === 0) {
+      trigger.textContent = placeholder;
+      trigger.classList.remove('has-selection');
+      return;
+    }
+
+    trigger.classList.add('has-selection');
+    trigger.textContent = selected.length === 1
+      ? selected[0].label
+      : `已選 ${selected.length} 項`;
+  },
+
+  _resetAssignmentMultiSelect(root, filterKey, placeholder) {
+    if (!root) return;
+    const state = Pages._assignmentState;
+    if (state?.filters) state.filters[filterKey] = [];
+    const searchInput = root.querySelector('[data-role="search"]');
+    if (searchInput) searchInput.value = '';
+    Pages._refreshAssignmentMultiSelect(root);
+    Pages._updateAssignmentMultiSelectTrigger(root, [], placeholder);
   },
 
   _buildAssignmentFilterOptions(items) {
