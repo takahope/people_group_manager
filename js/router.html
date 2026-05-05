@@ -2060,13 +2060,13 @@ const Pages = {
                   <label class="station-member-row ${state.selectedRowIndices.has(member.rowIndex) ? 'is-selected' : ''}">
                     <input type="checkbox" data-role="station-member-checkbox" data-row-index="${member.rowIndex}" ${state.selectedRowIndices.has(member.rowIndex) ? 'checked' : ''} ${state.canEdit ? '' : 'disabled'}>
                     <div class="station-member-row__body">
-                      <div class="station-member-row__title">
-                        <strong>${Components.escapeHtml(member.name || member.email)}</strong>
-                        <span>${Components.escapeHtml(member.title || '未命名職務')}</span>
-                      </div>
-                      <div class="station-member-row__meta">
-                        <span>${Components.escapeHtml(member.email || '—')}</span>
-                        <span>主管：${Components.escapeHtml(member.managerName || member.managerEmail || '未設定')}</span>
+                      <div class="station-member-row__inline">
+                        <strong class="station-member-row__primary">${Components.escapeHtml(member.name || member.email)}</strong>
+                        <span class="station-member-row__badge badge badge--neutral">${Components.escapeHtml(member.title || '未命名職務')}</span>
+                        <span class="station-member-row__divider" aria-hidden="true"></span>
+                        <span class="station-member-row__meta-inline">${Components.escapeHtml(member.email || '—')}</span>
+                        <span class="station-member-row__divider" aria-hidden="true"></span>
+                        <span class="station-member-row__meta-inline">主管：${Components.escapeHtml(member.managerName || member.managerEmail || '未設定')}</span>
                       </div>
                     </div>
                   </label>`).join('') : `
