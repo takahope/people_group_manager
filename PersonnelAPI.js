@@ -496,6 +496,7 @@ function buildAssignmentTypeMap_(assignments) {
   });
 
   groupedAssignments.forEach(personAssignments => {
+    const duplicateOrgCodeTypeMap = buildDuplicateOrgCodeTypeMap_(personAssignments);
     const primaryMode = getPrimaryAssignmentMode_(personAssignments);
     const primaryAssignments = isExplicitPrimaryKind_(primaryMode)
       ? personAssignments.filter(item => classifyAssignmentKind_(item.orgCode) === primaryMode)
@@ -510,6 +511,12 @@ function buildAssignmentTypeMap_(assignments) {
       const itemKey = getAssignmentIdentityKey_(item);
       const itemKind = classifyAssignmentKind_(item.orgCode);
       const managerEmail = String(item.managerEmail || '').trim().toLowerCase();
+      const duplicateType = duplicateOrgCodeTypeMap.get(itemKey);
+
+      if (duplicateType) {
+        typeMap.set(itemKey, duplicateType);
+        return;
+      }
 
       if (isFallbackPrimaryMode_(primaryMode)) {
         typeMap.set(itemKey, '主職');
@@ -527,6 +534,10 @@ function buildAssignmentTypeMap_(assignments) {
       }
 
       if (isExplicitPrimaryKind_(primaryMode) && isTfAssignment_(item.orgCode)) {
+        if (!managerEmail || primaryManagerEmails.size === 0) {
+          typeMap.set(itemKey, '兼任');
+          return;
+        }
         typeMap.set(itemKey, primaryManagerEmails.has(managerEmail) ? '兼任' : '矩陣兼任');
         return;
       }
@@ -541,6 +552,33 @@ function buildAssignmentTypeMap_(assignments) {
   });
 
   return typeMap;
+}
+
+function buildDuplicateOrgCodeTypeMap_(personAssignments) {
+  const assignmentsByOrgCode = new Map();
+  const duplicateTypeMap = new Map();
+
+  personAssignments.forEach(item => {
+    const orgCodeKey = String(item.orgCode || '').trim().toUpperCase();
+    if (!orgCodeKey) return;
+    if (!assignmentsByOrgCode.has(orgCodeKey)) assignmentsByOrgCode.set(orgCodeKey, []);
+    assignmentsByOrgCode.get(orgCodeKey).push(item);
+  });
+
+  assignmentsByOrgCode.forEach(orgAssignments => {
+    if (orgAssignments.length < 2) return;
+
+    const leaderAssignments = orgAssignments.filter(item => titleContainsLeaderKeyword_(item.title));
+    if (leaderAssignments.length !== 1) return;
+
+    const primaryKey = getAssignmentIdentityKey_(leaderAssignments[0]);
+    orgAssignments.forEach(item => {
+      const itemKey = getAssignmentIdentityKey_(item);
+      duplicateTypeMap.set(itemKey, itemKey === primaryKey ? '主職' : '垂直兼任');
+    });
+  });
+
+  return duplicateTypeMap;
 }
 
 function getPrimaryAssignmentMode_(personAssignments) {
@@ -581,6 +619,10 @@ function isFallbackPrimaryMode_(primaryMode) {
 
 function isTfAssignment_(orgCode) {
   return String(orgCode || '').trim().toUpperCase().startsWith('TF-');
+}
+
+function titleContainsLeaderKeyword_(title) {
+  return String(title || '').trim().includes('長');
 }
 
 function getAssignmentIdentityKey_(assignment) {
