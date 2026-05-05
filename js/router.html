@@ -673,25 +673,28 @@ const Pages = {
       </div>
       <div class="card filter-card">
         <div>
-          <p style="color:var(--color-text-sub);font-size:.875rem">依人員、組織或職務快速查詢職務配置，列表採前端分頁每頁 200 筆。</p>
+          <p style="color:var(--color-text-sub);font-size:.875rem">可用關鍵字即時搜尋，並透過人員、組織與職務下拉選單交叉篩選；列表採前端分頁每頁 200 筆。</p>
         </div>
         <div class="filter-grid">
           <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">關鍵字搜尋</label>
+            <input type="search" id="assignmentKeyword" class="form-control" placeholder="輸入人員、組織、代碼或職務關鍵字">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
             <label class="form-label">人員姓名 / Email</label>
-            <input type="search" id="assignmentKeyword" class="form-control" placeholder="輸入姓名或 Email">
+            <select id="assignmentPersonFilter" class="form-control"></select>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">組織單位</label>
-            <input type="search" id="assignmentOrgQuery" class="form-control" placeholder="輸入組織名稱或代碼">
+            <select id="assignmentOrgFilter" class="form-control"></select>
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label class="form-label">職務名稱</label>
-            <input type="search" id="assignmentTitleQuery" class="form-control" placeholder="輸入職務關鍵字">
+            <select id="assignmentTitleFilter" class="form-control"></select>
           </div>
         </div>
         <div class="filter-actions">
           <div class="filter-actions__group">
-            <button class="btn btn--primary" id="assignmentSearchBtn">搜尋</button>
             <button class="btn btn--ghost" id="assignmentClearBtn">清除條件</button>
           </div>
         </div>
@@ -707,13 +710,15 @@ const Pages = {
       ]);
       if (!pageCtx.isActive()) return;
 
+      const filterOptions = Pages._buildAssignmentFilterOptions(allItems);
       Pages._assignmentState = {
         pageCtx,
         canWrite,
         allItems,
         filteredItems: allItems,
+        filterOptions,
         options,
-        filters: { keyword: '', orgQuery: '', title: '' },
+        filters: { keyword: '', personEmail: '', orgCode: '', title: '' },
         currentPage: 1,
         pageSize: 200,
       };
@@ -740,11 +745,31 @@ const Pages = {
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
     const keywordInput = pageCtx.query('#assignmentKeyword');
-    const orgInput = pageCtx.query('#assignmentOrgQuery');
-    const titleInput = pageCtx.query('#assignmentTitleQuery');
-    const searchBtn = pageCtx.query('#assignmentSearchBtn');
+    const personSelect = pageCtx.query('#assignmentPersonFilter');
+    const orgSelect = pageCtx.query('#assignmentOrgFilter');
+    const titleSelect = pageCtx.query('#assignmentTitleFilter');
     const clearBtn = pageCtx.query('#assignmentClearBtn');
     const addBtn = pageCtx.query('#addAssignmentBtn');
+    const { people = [], orgs = [], titles = [] } = state.filterOptions || {};
+
+    if (personSelect) {
+      personSelect.innerHTML = [
+        '<option value="">全部人員</option>',
+        ...people.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
+      ].join('');
+    }
+    if (orgSelect) {
+      orgSelect.innerHTML = [
+        '<option value="">全部組織</option>',
+        ...orgs.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
+      ].join('');
+    }
+    if (titleSelect) {
+      titleSelect.innerHTML = [
+        '<option value="">全部職務</option>',
+        ...titles.map(item => `<option value="${Components.escapeHtml(item.value)}">${Components.escapeHtml(item.label)}</option>`),
+      ].join('');
+    }
 
     if (keywordInput) {
       keywordInput.addEventListener('input', () => {
@@ -755,21 +780,19 @@ const Pages = {
       });
     }
 
-    [keywordInput, orgInput, titleInput].forEach(input => {
-      if (!input) return;
-      input.addEventListener('keydown', e => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
+    [personSelect, orgSelect, titleSelect].forEach(select => {
+      if (!select) return;
+      select.addEventListener('change', () => {
         Pages._applyAssignmentFilters();
       });
     });
 
-    if (searchBtn) searchBtn.onclick = () => Pages._applyAssignmentFilters();
     if (clearBtn) {
       clearBtn.onclick = () => {
         if (keywordInput) keywordInput.value = '';
-        if (orgInput) orgInput.value = '';
-        if (titleInput) titleInput.value = '';
+        if (personSelect) personSelect.value = '';
+        if (orgSelect) orgSelect.value = '';
+        if (titleSelect) titleSelect.value = '';
         Pages._applyAssignmentFilters();
       };
     }
@@ -782,27 +805,64 @@ const Pages = {
     if (!state || !pageCtx || !pageCtx.isActive()) return;
 
     const keyword = String(pageCtx.query('#assignmentKeyword')?.value || '').trim();
-    const orgQuery = String(pageCtx.query('#assignmentOrgQuery')?.value || '').trim();
-    const title = String(pageCtx.query('#assignmentTitleQuery')?.value || '').trim();
+    const personEmail = String(pageCtx.query('#assignmentPersonFilter')?.value || '').trim().toLowerCase();
+    const orgCode = String(pageCtx.query('#assignmentOrgFilter')?.value || '').trim().toUpperCase();
+    const title = String(pageCtx.query('#assignmentTitleFilter')?.value || '').trim();
     const keywordLower = keyword.toLowerCase();
-    const orgLower = orgQuery.toLowerCase();
-    const titleLower = title.toLowerCase();
 
-    state.filters = { keyword, orgQuery, title };
+    state.filters = { keyword, personEmail, orgCode, title };
     state.filteredItems = state.allItems.filter(item => {
       const matchesKeyword = !keywordLower ||
         String(item.name || '').toLowerCase().includes(keywordLower) ||
-        String(item.email || '').toLowerCase().includes(keywordLower);
-      const matchesOrg = !orgLower ||
-        String(item.orgName || '').toLowerCase().includes(orgLower) ||
-        String(item.orgCode || '').toLowerCase().includes(orgLower);
-      const matchesTitle = !titleLower ||
-        String(item.title || '').toLowerCase().includes(titleLower);
-      return matchesKeyword && matchesOrg && matchesTitle;
+        String(item.email || '').toLowerCase().includes(keywordLower) ||
+        String(item.orgName || '').toLowerCase().includes(keywordLower) ||
+        String(item.orgCode || '').toLowerCase().includes(keywordLower) ||
+        String(item.title || '').toLowerCase().includes(keywordLower);
+      const matchesPerson = !personEmail ||
+        String(item.email || '').trim().toLowerCase() === personEmail;
+      const matchesOrg = !orgCode ||
+        String(item.orgCode || '').trim().toUpperCase() === orgCode;
+      const matchesTitle = !title ||
+        String(item.title || '').trim() === title;
+      return matchesKeyword && matchesPerson && matchesOrg && matchesTitle;
     });
 
     if (resetPage) state.currentPage = 1;
     Pages._renderAssignmentTable();
+  },
+
+  _buildAssignmentFilterOptions(items) {
+    const peopleMap = new Map();
+    const orgMap = new Map();
+    const titleSet = new Set();
+
+    (items || []).forEach(item => {
+      const email = String(item.email || '').trim();
+      const name = String(item.name || '').trim();
+      const orgCode = String(item.orgCode || '').trim();
+      const orgName = String(item.orgName || '').trim();
+      const title = String(item.title || '').trim();
+
+      if (email && !peopleMap.has(email.toLowerCase())) {
+        peopleMap.set(email.toLowerCase(), {
+          value: email,
+          label: name ? `${name} (${email})` : email,
+        });
+      }
+      if (orgCode && !orgMap.has(orgCode.toUpperCase())) {
+        orgMap.set(orgCode.toUpperCase(), {
+          value: orgCode,
+          label: orgName ? `${orgName} (${orgCode})` : orgCode,
+        });
+      }
+      if (title) titleSet.add(title);
+    });
+
+    return {
+      people: [...peopleMap.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant')),
+      orgs: [...orgMap.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-Hant')),
+      titles: [...titleSet].sort((a, b) => a.localeCompare(b, 'zh-Hant')).map(value => ({ value, label: value })),
+    };
   },
 
   _renderAssignmentTable() {
