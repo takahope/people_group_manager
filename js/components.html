@@ -68,6 +68,8 @@ const Components = (() => {
     backdrop.hidden = false;
     if (modalEl) modalEl.className = `modal ${modalClassName}`.trim();
     bodyEl.className = `modal__body ${bodyClassName}`.trim();
+    bodyEl.scrollTop = 0;
+    bodyEl.scrollLeft = 0;
     if (footerEl) footerEl.className = 'modal__footer';
     confirmBtn.style.display = hideConfirm ? 'none' : '';
     cancelBtn.style.display = '';
@@ -120,7 +122,11 @@ const Components = (() => {
     const modalEl = backdrop ? backdrop.querySelector('.modal') : null;
     const bodyEl = document.getElementById('modalBody');
     if (modalEl) modalEl.className = 'modal';
-    if (bodyEl) bodyEl.className = 'modal__body';
+    if (bodyEl) {
+      bodyEl.className = 'modal__body';
+      bodyEl.scrollTop = 0;
+      bodyEl.scrollLeft = 0;
+    }
     if (backdrop) backdrop.hidden = true;
   }
 
@@ -442,11 +448,18 @@ const Components = (() => {
           </div>
           <span class="badge badge--neutral">層級 ${escapeHtml(String(org.level || '—'))}</span>
         </div>
+        <div class="org-member-modal__focus">
+          <span class="org-member-modal__focus-label">目前檢視節點</span>
+          <div class="org-member-modal__focus-main">
+            <strong>${escapeHtml(org.name || '未命名組織')}</strong>
+            <span>${escapeHtml(org.code || '')}</span>
+          </div>
+        </div>
         ${summaryHtml}
         ${warningHtml}
         <div class="org-member-modal__sections">
           ${sections.map(section => `
-            <section class="org-member-section">
+            <section class="org-member-section${section.depthFromSelected === 0 ? ' org-member-section--root' : ''}">
               <div class="org-member-section__header">
                 <div>
                   <div class="org-member-section__path">第 ${escapeHtml(String(Number(section.depthFromSelected || 0) + 1))} 層檢視</div>
@@ -455,35 +468,35 @@ const Components = (() => {
                 </div>
                 <span class="badge badge--neutral">${escapeHtml(String((section.assignments || []).length))} 筆</span>
               </div>
-              <div class="org-member-table-wrap">
-                <table class="org-member-table">
-                  <thead>
-                    <tr>
-                      <th>姓名</th>
-                      <th>Email</th>
-                      <th>職稱</th>
-                      <th>直屬主管</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${(section.assignments || []).map(item => `
-                      <tr>
-                        <td data-label="姓名">
-                          <div class="org-member-cell__primary">${escapeHtml(item.name || '未命名')}</div>
-                        </td>
-                        <td data-label="Email">
-                          <div class="org-member-cell__mono">${escapeHtml(item.email || '—')}</div>
-                        </td>
-                        <td data-label="職稱">
-                          <div class="org-member-cell__primary">${escapeHtml(item.title || '—')}</div>
-                        </td>
-                        <td data-label="直屬主管">
-                          <div class="org-member-cell__secondary">${escapeHtml(item.managerName || '未設定')}${item.managerEmail ? ` <span class="org-member-cell__mono">(${escapeHtml(item.managerEmail)})</span>` : ''}</div>
-                        </td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
+              <div class="org-member-grid">
+                <div class="org-member-grid__header" aria-hidden="true">
+                  <div>姓名</div>
+                  <div>Email</div>
+                  <div>職稱</div>
+                  <div>直屬主管</div>
+                </div>
+                <div class="org-member-grid__body">
+                  ${(section.assignments || []).map(item => `
+                    <article class="org-member-row">
+                      <div class="org-member-field">
+                        <span class="org-member-field__label">姓名</span>
+                        <div class="org-member-cell__primary">${escapeHtml(item.name || '未命名')}</div>
+                      </div>
+                      <div class="org-member-field">
+                        <span class="org-member-field__label">Email</span>
+                        <div class="org-member-cell__mono">${escapeHtml(item.email || '—')}</div>
+                      </div>
+                      <div class="org-member-field">
+                        <span class="org-member-field__label">職稱</span>
+                        <div class="org-member-cell__primary">${escapeHtml(item.title || '—')}</div>
+                      </div>
+                      <div class="org-member-field">
+                        <span class="org-member-field__label">直屬主管</span>
+                        <div class="org-member-cell__secondary">${escapeHtml(item.managerName || '未設定')}${item.managerEmail ? ` <span class="org-member-cell__mono">(${escapeHtml(item.managerEmail)})</span>` : ''}</div>
+                      </div>
+                    </article>
+                  `).join('')}
+                </div>
               </div>
             </section>
           `).join('')}

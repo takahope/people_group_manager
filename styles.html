@@ -764,6 +764,37 @@ ul, ol { list-style: none; }
   gap: .75rem;
   padding: 1.25rem 1.5rem .5rem;
 }
+.org-member-modal__focus {
+  margin: 0 1.5rem 1rem;
+  padding: .85rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, .08);
+  background: linear-gradient(135deg, rgba(233,245,255,.95), rgba(247,250,255,.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+}
+.org-member-modal__focus-label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--color-text-sub);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: .3rem;
+}
+.org-member-modal__focus-main {
+  display: flex;
+  align-items: baseline;
+  gap: .65rem;
+  flex-wrap: wrap;
+}
+.org-member-modal__focus-main strong {
+  font-size: 1rem;
+}
+.org-member-modal__focus-main span {
+  font-size: .82rem;
+  color: var(--color-text-sub);
+  font-family: var(--font-mono);
+}
 .org-member-modal__heading-main {
   min-width: 0;
   display: flex;
@@ -828,6 +859,10 @@ ul, ol { list-style: none; }
   background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.96));
   box-shadow: 0 10px 24px rgba(15,23,42,.05);
 }
+.org-member-section--root {
+  border-color: rgba(26,115,232,.18);
+  box-shadow: 0 14px 30px rgba(26,115,232,.08);
+}
 .org-member-section__header {
   display: flex;
   align-items: center;
@@ -856,39 +891,41 @@ ul, ol { list-style: none; }
   color: var(--color-text-sub);
   margin-top: .15rem;
 }
-.org-member-table-wrap {
-  overflow-x: auto;
+.org-member-grid {
+  padding: .75rem 1rem 1rem;
 }
-.org-member-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: fixed;
-}
-.org-member-table th,
-.org-member-table td {
-  padding: .78rem 1.1rem;
-  vertical-align: top;
-  text-align: left;
-  border-bottom: 1px solid rgba(15,23,42,.07);
-}
-.org-member-table th {
+.org-member-grid__header {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.25fr) minmax(180px, 1fr) minmax(220px, 1.15fr);
+  gap: .75rem;
+  padding: 0 1rem .55rem;
   font-size: .76rem;
   font-weight: 700;
   color: var(--color-text-sub);
   letter-spacing: .06em;
   text-transform: uppercase;
-  background: rgba(248,250,252,.92);
-  position: sticky;
-  top: 58px;
-  z-index: 1;
-  backdrop-filter: blur(10px);
 }
-.org-member-table tbody tr:last-child td {
-  border-bottom: none;
+.org-member-grid__body {
+  display: grid;
+  gap: .55rem;
 }
-.org-member-table tbody tr:nth-child(even) td {
-  background: rgba(248,250,252,.5);
+.org-member-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.25fr) minmax(180px, 1fr) minmax(220px, 1.15fr);
+  gap: .75rem;
+  padding: .85rem 1rem;
+  border: 1px solid rgba(15,23,42,.07);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,250,252,.92));
+}
+.org-member-row:nth-child(even) {
+  background: linear-gradient(180deg, rgba(248,250,252,.95), rgba(243,247,250,.9));
+}
+.org-member-field {
+  min-width: 0;
+}
+.org-member-field__label {
+  display: none;
 }
 .org-member-cell__primary {
   font-weight: 600;
@@ -1069,6 +1106,7 @@ ul, ol { list-style: none; }
     padding: 0;
   }
   .org-member-modal__heading,
+  .org-member-modal__focus,
   .org-member-modal__summary,
   .org-member-modal__sections {
     padding-left: 1rem;
@@ -1078,38 +1116,32 @@ ul, ol { list-style: none; }
     align-items: flex-start;
     flex-direction: column;
   }
-  .org-member-table,
-  .org-member-table thead,
-  .org-member-table tbody,
-  .org-member-table tr,
-  .org-member-table th,
-  .org-member-table td {
-    display: block;
-    width: 100%;
+  .org-member-modal__focus {
+    margin-left: 1rem;
+    margin-right: 1rem;
   }
-  .org-member-table thead {
+  .org-member-grid {
+    padding: .65rem .8rem .9rem;
+  }
+  .org-member-grid__header {
     display: none;
   }
-  .org-member-table tbody tr {
-    padding: .5rem 0;
-    border-bottom: 1px solid rgba(15,23,42,.07);
+  .org-member-grid__body {
+    gap: .65rem;
   }
-  .org-member-table tbody tr:last-child {
-    border-bottom: none;
+  .org-member-row {
+    grid-template-columns: 1fr;
+    gap: .55rem;
+    padding: .8rem .9rem;
   }
-  .org-member-table td {
-    border-bottom: none;
-    padding: .3rem 1rem;
-  }
-  .org-member-table td::before {
-    content: attr(data-label);
+  .org-member-field__label {
     display: block;
     font-size: .72rem;
     font-weight: 700;
     color: var(--color-text-sub);
     letter-spacing: .05em;
     text-transform: uppercase;
-    margin-bottom: .1rem;
+    margin-bottom: .12rem;
   }
 }
 
