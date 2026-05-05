@@ -546,6 +546,14 @@ const Pages = {
               label: '員工狀態',
               render: (value) => `<span class="badge ${statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
             },
+            {
+              key: 'assignmentView',
+              label: '查看職務',
+              sortable: false,
+              render: (_, row) => `
+                <button class="btn btn--ghost btn--sm" onclick="Pages._showPersonnelAssignments('${row.email}')">查看職務</button>
+              `,
+            },
           ],
           actions: canWrite ? (row) => `
             <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
@@ -659,6 +667,45 @@ const Pages = {
           location.reload();
         } catch (err) { API.handleError(err); }
       }, '確認刪除');
+  },
+
+  async _showPersonnelAssignments(email) {
+    if (!email) return;
+
+    Components.showModal(
+      '職務查看',
+      '<div class="page-loading"><div class="spinner"></div><p>載入個人職務資料…</p></div>',
+      () => true,
+      '關閉',
+      {
+        modalClassName: 'modal--wide',
+        hideConfirm: true,
+        cancelText: '關閉',
+      }
+    );
+
+    try {
+      const result = await API.getPersonnelAssignmentDetails(email);
+      const bodyEl = document.getElementById('modalBody');
+      const titleEl = document.getElementById('modalTitle');
+      if (!bodyEl || !titleEl) return;
+
+      titleEl.textContent = `職務查看｜${result?.person?.name || email}`;
+      bodyEl.innerHTML = Components.renderPersonnelAssignmentModal(result);
+      bodyEl.scrollTop = 0;
+      bodyEl.scrollLeft = 0;
+    } catch (err) {
+      API.handleError(err);
+      const bodyEl = document.getElementById('modalBody');
+      if (!bodyEl) return;
+      bodyEl.innerHTML = `
+        <div class="empty-state" style="margin:0">
+          <p>無法取得個人職務資料</p>
+          <p style="font-size:.85rem;color:var(--color-text-sub)">${Components.escapeHtml(err.message)}</p>
+        </div>`;
+      bodyEl.scrollTop = 0;
+      bodyEl.scrollLeft = 0;
+    }
   },
 
   // ========================

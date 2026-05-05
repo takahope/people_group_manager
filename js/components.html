@@ -232,14 +232,18 @@ const Components = (() => {
       const th = document.createElement('th');
       th.textContent = col.label;
       th.dataset.key = col.key;
-      th.onclick = () => {
-        const asc = (currentSort.key === col.key) ? !currentSort.asc : true;
-        currentSort = { key: col.key, asc };
-        sortTable(col.key, asc, tbody, config, currentData);
-        // 更新排序指示
-        headerRow.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
-        th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-      };
+      if (col.sortable !== false) {
+        th.onclick = () => {
+          const asc = (currentSort.key === col.key) ? !currentSort.asc : true;
+          currentSort = { key: col.key, asc };
+          sortTable(col.key, asc, tbody, config, currentData);
+          // 更新排序指示
+          headerRow.querySelectorAll('th').forEach(t => t.classList.remove('sort-asc','sort-desc'));
+          th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        };
+      } else {
+        th.classList.add('data-table__th--static');
+      }
       headerRow.appendChild(th);
     });
     if (config.actions) {
@@ -504,6 +508,85 @@ const Components = (() => {
       </div>`;
   }
 
+  function renderPersonnelAssignmentModal(payload) {
+    const person = payload?.person || {};
+    const summary = payload?.summary || {};
+    const groups = payload?.groups || {};
+    const sections = [
+      { label: '主職', items: groups.primary || [], badgeClass: 'badge--primary' },
+      { label: '兼任', items: groups.concurrent || [], badgeClass: 'badge--neutral' },
+      { label: '垂直兼任', items: groups.vertical || [], badgeClass: 'badge--success' },
+      { label: '矩陣兼任', items: groups.matrix || [], badgeClass: 'badge--warning' },
+    ];
+
+    if (!(summary.total > 0)) {
+      return `
+        <div class="personnel-assignment-modal">
+          <div class="personnel-assignment-modal__header">
+            <div class="personnel-assignment-modal__name">${escapeHtml(person.name || '未命名人員')}</div>
+            <div class="personnel-assignment-modal__meta">
+              <span class="personnel-assignment-modal__email">${escapeHtml(person.email || '—')}</span>
+              <span class="badge badge--neutral">${escapeHtml(person.status || '—')}</span>
+            </div>
+          </div>
+          <div class="empty-state" style="margin:0">
+            <p>此人員目前沒有職務配置資料</p>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="personnel-assignment-modal">
+        <div class="personnel-assignment-modal__header">
+          <div class="personnel-assignment-modal__name">${escapeHtml(person.name || '未命名人員')}</div>
+          <div class="personnel-assignment-modal__meta">
+            <span class="personnel-assignment-modal__email">${escapeHtml(person.email || '—')}</span>
+            <span class="badge badge--neutral">${escapeHtml(person.status || '—')}</span>
+          </div>
+        </div>
+        <div class="personnel-assignment-modal__summary">
+          <span class="personnel-assignment-kpi"><strong>${escapeHtml(String(summary.total || 0))}</strong><span>總職務</span></span>
+          <span class="personnel-assignment-kpi"><strong>${escapeHtml(String(summary.primaryCount || 0))}</strong><span>主職</span></span>
+          <span class="personnel-assignment-kpi"><strong>${escapeHtml(String(summary.concurrentCount || 0))}</strong><span>兼任</span></span>
+          <span class="personnel-assignment-kpi"><strong>${escapeHtml(String(summary.verticalCount || 0))}</strong><span>垂直兼任</span></span>
+          <span class="personnel-assignment-kpi"><strong>${escapeHtml(String(summary.matrixCount || 0))}</strong><span>矩陣兼任</span></span>
+        </div>
+        <div class="personnel-assignment-modal__sections">
+          ${sections.filter(section => section.items.length > 0).map(section => `
+            <section class="personnel-assignment-section">
+              <div class="personnel-assignment-section__header">
+                <div class="personnel-assignment-section__title">${escapeHtml(section.label)}</div>
+                <span class="badge ${section.badgeClass}">${escapeHtml(String(section.items.length))} 筆</span>
+              </div>
+              <div class="personnel-assignment-list">
+                ${section.items.map(item => `
+                  <article class="personnel-assignment-item">
+                    <div class="personnel-assignment-item__top">
+                      <div>
+                        <div class="personnel-assignment-item__org">${escapeHtml(item.orgName || '未命名組織')}</div>
+                        <div class="personnel-assignment-item__code">${escapeHtml(item.orgCode || '—')}</div>
+                      </div>
+                      <span class="badge ${section.badgeClass}">${escapeHtml(item.assignmentType || section.label)}</span>
+                    </div>
+                    <div class="personnel-assignment-item__body">
+                      <div class="personnel-assignment-item__field">
+                        <span class="personnel-assignment-item__label">職稱</span>
+                        <div>${escapeHtml(item.title || '—')}</div>
+                      </div>
+                      <div class="personnel-assignment-item__field">
+                        <span class="personnel-assignment-item__label">直屬主管</span>
+                        <div>${escapeHtml(item.managerName || '未設定')}${item.managerEmail ? ` <span class="personnel-assignment-item__mono">(${escapeHtml(item.managerEmail)})</span>` : ''}</div>
+                      </div>
+                    </div>
+                  </article>
+                `).join('')}
+              </div>
+            </section>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
   // =============================================
   // RACI 列（RaciRow）
   // =============================================
@@ -654,6 +737,7 @@ const Components = (() => {
     DataTable,
     OrgNode,
     renderOrgMemberListModal,
+    renderPersonnelAssignmentModal,
     PersonCard,
     RaciRow,
     AuditResultPanel,

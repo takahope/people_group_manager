@@ -119,6 +119,7 @@ const API = (() => {
 
     // 人員管理
     getAllPersonnel:   ()                     => callGAS('getAllPersonnel'),
+    getPersonnelAssignmentDetails: (email)   => callGAS('getPersonnelAssignmentDetails', email),
     addPerson:        (obj)                  => callGAS('addPerson', obj),
     updatePerson:     (email, obj)           => callGAS('updatePerson', email, obj),
     deletePerson:     (email)                => callGAS('deletePerson', email),

@@ -209,13 +209,57 @@ function getAllPersonnel() {
  */
 function getAssignmentsByEmail(targetEmail) {
   try {
-    if (!checkPermission('personnel.read.all') &&
-        !checkPermission('personnel.read.dept') &&
-        !checkPermission('personnel.read.self')) {
-      return errorResponse('無查詢職務配置的權限');
+    if (!canAccessPersonnelTarget_(targetEmail)) {
+      return errorResponse('無查詢此人員職務配置的權限');
     }
     return successResponse(DataService.getSheet3DataByEmail(targetEmail));
   } catch (error) {
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 取得特定人員的職務詳情，並依主職 / 兼任 / 垂直兼任 / 矩陣兼任分組。
+ *
+ * @param {string} targetEmail
+ * @returns {string} JSON 回應
+ */
+function getPersonnelAssignmentDetails(targetEmail) {
+  try {
+    if (!targetEmail) return errorResponse('缺少 targetEmail 參數');
+    if (!canAccessPersonnelTarget_(targetEmail)) {
+      return errorResponse('無查詢此人員職務配置的權限');
+    }
+
+    const person = DataService.findPersonByEmail(targetEmail);
+    if (!person) return errorResponse(`找不到人員：${targetEmail}`);
+
+    const assignments = DataService.getSheet3DataByEmail(targetEmail);
+    const items = buildAssignmentListItems(assignments);
+    const groups = {
+      primary: items.filter(item => item.assignmentType === '主職'),
+      concurrent: items.filter(item => item.assignmentType === '兼任'),
+      vertical: items.filter(item => item.assignmentType === '垂直兼任'),
+      matrix: items.filter(item => item.assignmentType === '矩陣兼任'),
+    };
+
+    return successResponse({
+      person: {
+        email: person.email,
+        name: person.name,
+        status: person.status,
+      },
+      summary: {
+        total: items.length,
+        primaryCount: groups.primary.length,
+        concurrentCount: groups.concurrent.length,
+        verticalCount: groups.vertical.length,
+        matrixCount: groups.matrix.length,
+      },
+      groups,
+    });
+  } catch (error) {
+    Logger.log('getPersonnelAssignmentDetails 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
 }
@@ -328,6 +372,29 @@ function validateAssignObj(assignObj) {
   if (!assignObj.orgCode) return '組別代碼為必填';
   if (!assignObj.title)   return '職稱為必填';
   return null;
+}
+
+function canAccessPersonnelTarget_(targetEmail) {
+  const normalizedTargetEmail = String(targetEmail || '').trim().toLowerCase();
+  if (!normalizedTargetEmail) return false;
+
+  if (checkPermission('personnel.read.all')) return true;
+
+  const currentEmail = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!currentEmail) return false;
+
+  if (checkPermission('personnel.read.self')) {
+    return normalizedTargetEmail === currentEmail;
+  }
+
+  if (checkPermission('personnel.read.dept')) {
+    return DataService.getAllAssignments().some(item =>
+      String(item.managerEmail || '').trim().toLowerCase() === currentEmail
+      && String(item.email || '').trim().toLowerCase() === normalizedTargetEmail
+    );
+  }
+
+  return false;
 }
 
 function buildAssignmentListItems(assignments) {
