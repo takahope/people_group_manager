@@ -131,6 +131,7 @@ const API = (() => {
 
     // 組織架構
     getOrgTree:         (type)               => callGAS('getOrgTree', type),
+    getOrgMemberList:   (orgCode)            => callGAS('getOrgMemberList', orgCode),
     getStationManagers: ()                   => callGAS('getStationManagers'),
     detectVertical:     (email)              => callGAS('detectVerticalConcurrency', email),
     addOrgNode:         (obj)                => callGAS('addOrgNode', obj),

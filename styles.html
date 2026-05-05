@@ -595,13 +595,33 @@ ul, ol { list-style: none; }
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  cursor: pointer;
   transition: background var(--transition);
 }
 .org-node__header:hover { background: var(--color-primary-light); }
 
-.org-node__toggle { font-size: .75rem; color: var(--color-text-sub); width: 16px; text-align: center; }
+.org-node__toggle {
+  font-size: .75rem;
+  color: var(--color-text-sub);
+  width: 20px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.org-node__toggle[disabled] { opacity: .45; cursor: default; }
 .org-node__code   { font-size: .75rem; color: var(--color-text-sub); font-family: var(--font-mono); }
+.org-node__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
 .org-node__name   { font-weight: 500; flex: 1; }
 .org-node__mgr    { font-size: .78rem; color: var(--color-text-sub); }
 
@@ -612,6 +632,87 @@ ul, ol { list-style: none; }
   padding-left: .75rem;
 }
 .org-node__children[hidden] { display: none; }
+
+/* =============================================
+   組織成員清單
+   ============================================= */
+.org-member-modal__heading {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+.org-member-modal__code {
+  font-size: .82rem;
+  color: var(--color-text-sub);
+  font-family: var(--font-mono);
+}
+.org-member-modal__summary {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+}
+.org-member-modal__warnings {
+  margin-bottom: .75rem;
+  padding: .75rem;
+  border-radius: var(--radius-sm);
+  background: #fff8e6;
+  border: 1px solid #f0c36d;
+  color: #7a5a00;
+  font-size: .85rem;
+  line-height: 1.6;
+}
+.org-member-modal__sections {
+  display: grid;
+  gap: .75rem;
+}
+.org-member-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.org-member-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .75rem 1rem;
+  background: var(--color-bg);
+}
+.org-member-section__title {
+  font-weight: 600;
+  line-height: 1.5;
+}
+.org-member-section__meta {
+  font-size: .8rem;
+  color: var(--color-text-sub);
+  margin-top: .15rem;
+}
+.org-member-list {
+  display: grid;
+  gap: .5rem;
+  padding: .75rem 1rem 1rem;
+}
+.org-member-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr);
+  gap: .75rem;
+  padding: .75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+.org-member-item__name {
+  font-weight: 600;
+  margin-bottom: .15rem;
+}
+.org-member-item__email,
+.org-member-item__meta {
+  font-size: .85rem;
+  color: var(--color-text-sub);
+  line-height: 1.6;
+}
 
 /* =============================================
    稽核面板
@@ -767,6 +868,7 @@ ul, ol { list-style: none; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 
   .modal { margin: .5rem; }
+  .org-member-item { grid-template-columns: 1fr; }
 }
 
 /* 列印樣式（RACI 個人責任查詢） */

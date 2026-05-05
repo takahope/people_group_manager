@@ -25,6 +25,52 @@ function getOrgTree(orgType) {
   }
 }
 
+/**
+ * 取得指定組織節點及其子樹的成員清單。
+ *
+ * 資料來源為 Sheet 3 人員職務配置，顯示範圍含被點擊節點本身與其所有安全子節點。
+ * @param {string} orgCode
+ * @returns {string} JSON 回應
+ */
+function getOrgMemberList(orgCode) {
+  try {
+    if (!checkPermission('org.read')) return errorResponse('無查詢組織成員清單的權限');
+    if (!orgCode) return errorResponse('缺少 orgCode 參數');
+
+    const orgData = DataService.getSheet2Data(null);
+    const analysis = analyzeOrgGraph(orgData);
+    const org = analysis.nodesByCode.get(orgCode);
+    if (!org) return errorResponse(`找不到組織節點：${orgCode}`);
+
+    const subtreeCodes = analysis.descendantsByCode.get(orgCode) || new Set([orgCode]);
+    const assignments = DataService.getAllAssignments()
+      .filter(item => subtreeCodes.has(item.orgCode));
+    const sections = buildOrgMemberSections_(orgCode, analysis, assignments);
+    const warnings = analysis.warnings.filter(item =>
+      subtreeCodes.has(item.code) || subtreeCodes.has(item.parentCode)
+    );
+
+    return successResponse({
+      org: {
+        code: org.code,
+        name: org.name,
+        alias: org.alias || '',
+        type: org.type,
+        level: org.level,
+        parentCode: org.parentCode || '',
+      },
+      summary: {
+        orgCount: subtreeCodes.size,
+        assignmentCount: assignments.length,
+      },
+      sections,
+      warnings,
+    });
+  } catch (error) {
+    return errorResponse(error.message);
+  }
+}
+
 // =============================================
 // 駐站管理員儀表板
 // =============================================
@@ -230,4 +276,48 @@ function validateOrgCycle_(nodeObj, currentCode) {
   if (!relatedCycle) return null;
 
   return `此設定會形成組織循環：${relatedCycle.join(' -> ')}`;
+}
+
+function buildOrgMemberSections_(orgCode, analysis, assignments) {
+  const sections = [];
+  const assignmentsByOrgCode = new Map();
+
+  assignments.forEach(item => {
+    if (!assignmentsByOrgCode.has(item.orgCode)) assignmentsByOrgCode.set(item.orgCode, []);
+    assignmentsByOrgCode.get(item.orgCode).push({
+      email: item.email,
+      name: item.name,
+      orgCode: item.orgCode,
+      orgName: item.orgName,
+      title: item.title,
+      managerEmail: item.managerEmail || '',
+      managerName: item.managerName || '',
+      rowIndex: item.rowIndex,
+    });
+  });
+
+  walkOrgSubtree_(orgCode, analysis, 0, (node, depthFromSelected) => {
+    const orgAssignments = assignmentsByOrgCode.get(node.code) || [];
+    if (orgAssignments.length === 0) return;
+
+    sections.push({
+      orgCode: node.code,
+      orgName: node.name,
+      orgAlias: node.alias || '',
+      level: node.level,
+      depthFromSelected,
+      assignments: orgAssignments,
+    });
+  });
+
+  return sections;
+}
+
+function walkOrgSubtree_(orgCode, analysis, depth, visitor) {
+  const node = analysis.nodesByCode.get(orgCode);
+  if (!node) return;
+
+  visitor(node, depth);
+  const childCodes = analysis.safeChildrenMap.get(orgCode) || [];
+  childCodes.forEach(childCode => walkOrgSubtree_(childCode, analysis, depth + 1, visitor));
 }

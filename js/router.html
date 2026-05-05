@@ -1128,6 +1128,46 @@ const Pages = {
       <div id="orgWarnings"></div>
       <div id="orgTreeContainer" class="card"></div>`;
 
+    let activeMemberRequestId = 0;
+
+    const openOrgMemberModal = async (node) => {
+      if (!node || !node.code) return;
+      const requestId = ++activeMemberRequestId;
+
+      Components.showModal(
+        `成員清單｜${node.name || node.code}`,
+        '<div class="page-loading"><div class="spinner"></div><p>載入成員資料…</p></div>',
+        () => true,
+        '關閉'
+      );
+
+      const confirmBtn = document.getElementById('modalConfirmBtn');
+      const cancelBtn = document.getElementById('modalCancelBtn');
+      if (confirmBtn) confirmBtn.style.display = 'none';
+      if (cancelBtn) cancelBtn.textContent = '關閉';
+
+      try {
+        const result = await API.getOrgMemberList(node.code);
+        if (!pageCtx.isActive() || requestId !== activeMemberRequestId) return;
+        const bodyEl = document.getElementById('modalBody');
+        const titleEl = document.getElementById('modalTitle');
+        if (!bodyEl || !titleEl) return;
+        titleEl.textContent = `成員清單｜${result?.org?.name || node.name || node.code}`;
+        bodyEl.innerHTML = Components.renderOrgMemberListModal(result);
+      } catch (err) {
+        if (requestId !== activeMemberRequestId) return;
+        API.handleError(err);
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) {
+          bodyEl.innerHTML = `
+            <div class="empty-state" style="margin:0">
+              <p>無法取得組織成員清單</p>
+              <p style="font-size:.85rem;color:var(--color-text-sub)">${Components.escapeHtml(err.message)}</p>
+            </div>`;
+        }
+      }
+    };
+
     const renderTree = async (type) => {
       if (!pageCtx.isActive()) return;
       const treeDiv = pageCtx.query('#orgTreeContainer');
@@ -1151,7 +1191,9 @@ const Pages = {
             </div>`;
         }
         if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
-        tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0)));
+        tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0, {
+          onNodeClick: openOrgMemberModal,
+        })));
       } catch (err) {
         if (!pageCtx.isActive()) return;
         console.error('loadOrg 失敗：', err);

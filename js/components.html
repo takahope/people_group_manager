@@ -60,6 +60,12 @@ const Components = (() => {
     titleEl.textContent = title;
     bodyEl.innerHTML = body;
     backdrop.hidden = false;
+    confirmBtn.style.display = '';
+    cancelBtn.style.display = '';
+    closeBtn.style.display = '';
+    cancelBtn.textContent = '取消';
+    cancelBtn.disabled = false;
+    closeBtn.disabled = false;
 
     // 清除先前的事件監聽（避免重複綁定）
     const newConfirmBtn = confirmBtn.cloneNode(true);
@@ -286,13 +292,14 @@ const Components = (() => {
   // =============================================
 
   /**
-   * 遞迴渲染組織樹節點，支援展開/收合
+   * 遞迴渲染組織樹節點，支援展開/收合與節點點擊事件。
    * 
    * @param {Object} node  - 含 children 的樹節點
    * @param {number} depth - 層級深度
+   * @param {{onNodeClick?: Function}} options
    * @returns {HTMLElement}
    */
-  function OrgNode(node, depth = 0) {
+  function OrgNode(node, depth = 0, options = {}) {
     const div = document.createElement('div');
     div.className = 'org-node';
 
@@ -301,10 +308,13 @@ const Components = (() => {
 
     const header = document.createElement('div');
     header.className = 'org-node__header';
+    const toggleLabel = hasChildren ? (depth > 1 ? '▶' : '▼') : '';
     header.innerHTML = `
-      <span class="org-node__toggle">${hasChildren ? '▶' : ''}</span>
+      <button type="button" class="org-node__toggle" aria-label="切換子組織" ${hasChildren ? '' : 'disabled'}>${toggleLabel}</button>
       <span class="org-node__code">${escapeHtml(node.code)}</span>
-      <span class="org-node__name">${escapeHtml(node.name)}${node.alias ? ` <small style="color:var(--color-text-sub)">／${escapeHtml(node.alias)}</small>` : ''}</span>
+      <button type="button" class="org-node__main">
+        <span class="org-node__name">${escapeHtml(node.name)}${node.alias ? ` <small style="color:var(--color-text-sub)">／${escapeHtml(node.alias)}</small>` : ''}</span>
+      </button>
       ${node.managerName ? `<span class="org-node__mgr">👤 ${escapeHtml(node.managerName)}</span>` : ''}
       <span class="badge badge--neutral">${orgTypeBadge(node.type)}</span>
     `;
@@ -313,17 +323,25 @@ const Components = (() => {
     childrenDiv.className = 'org-node__children';
     childrenDiv.id = uid;
 
+    const toggleBtn = header.querySelector('.org-node__toggle');
+    const mainBtn = header.querySelector('.org-node__main');
+
     if (hasChildren) {
       childrenDiv.hidden = depth > 1; // 深度 > 1 預設收合
-      const toggle = header.querySelector('.org-node__toggle');
-
-      header.onclick = () => {
+      toggleBtn.onclick = (event) => {
+        event.stopPropagation();
         const isHidden = childrenDiv.hidden;
         childrenDiv.hidden = !isHidden;
-        toggle.textContent = isHidden ? '▼' : '▶';
+        toggleBtn.textContent = isHidden ? '▼' : '▶';
       };
 
-      node.children.forEach(child => childrenDiv.appendChild(OrgNode(child, depth + 1)));
+      node.children.forEach(child => childrenDiv.appendChild(OrgNode(child, depth + 1, options)));
+    }
+
+    if (mainBtn) {
+      mainBtn.onclick = () => {
+        if (typeof options.onNodeClick === 'function') options.onNodeClick(node);
+      };
     }
 
     div.appendChild(header);
@@ -358,6 +376,78 @@ const Components = (() => {
           <span style="font-size:.8rem;color:var(--color-text-sub)">${escapeHtml(person.email)}</span>
         </div>
         <div style="font-size:.85rem;color:var(--color-text-sub)">${titles || '暫無職務配置'}</div>
+      </div>`;
+  }
+
+  function renderOrgMemberListModal(payload) {
+    const org = payload?.org || {};
+    const summary = payload?.summary || {};
+    const sections = Array.isArray(payload?.sections) ? payload.sections : [];
+    const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+
+    const warningHtml = warnings.length > 0
+      ? `
+        <div class="org-member-modal__warnings">
+          ${warnings.map(item => `<div>${escapeHtml(item.message || '組織資料存在異常，已採安全模式計算成員')}</div>`).join('')}
+        </div>`
+      : '';
+
+    const summaryHtml = `
+      <div class="org-member-modal__summary">
+        <span class="badge badge--neutral">組織節點 ${escapeHtml(String(summary.orgCount || 0))}</span>
+        <span class="badge badge--neutral">職務配置 ${escapeHtml(String(summary.assignmentCount || 0))} 筆</span>
+      </div>`;
+
+    if (sections.length === 0) {
+      return `
+        <div class="org-member-modal">
+          <div class="org-member-modal__heading">
+            <strong>${escapeHtml(org.name || '未命名組織')}</strong>
+            <span class="org-member-modal__code">${escapeHtml(org.code || '')}</span>
+          </div>
+          ${summaryHtml}
+          ${warningHtml}
+          <div class="empty-state" style="margin:0">
+            <p>此組別與下層組別目前沒有職務配置資料</p>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="org-member-modal">
+        <div class="org-member-modal__heading">
+          <strong>${escapeHtml(org.name || '未命名組織')}</strong>
+          <span class="org-member-modal__code">${escapeHtml(org.code || '')}</span>
+        </div>
+        ${summaryHtml}
+        ${warningHtml}
+        <div class="org-member-modal__sections">
+          ${sections.map(section => `
+            <section class="org-member-section">
+              <div class="org-member-section__header">
+                <div>
+                  <div class="org-member-section__title">${'&nbsp;&nbsp;'.repeat(Number(section.depthFromSelected || 0))}${escapeHtml(section.orgName || '未命名組別')}${section.orgAlias ? ` <small>／${escapeHtml(section.orgAlias)}</small>` : ''}</div>
+                  <div class="org-member-section__meta">代碼 ${escapeHtml(section.orgCode || '')} ・ 層級 ${escapeHtml(String(section.level || '—'))}</div>
+                </div>
+                <span class="badge badge--neutral">${escapeHtml(String((section.assignments || []).length))} 筆</span>
+              </div>
+              <div class="org-member-list">
+                ${(section.assignments || []).map(item => `
+                  <article class="org-member-item">
+                    <div class="org-member-item__main">
+                      <div class="org-member-item__name">${escapeHtml(item.name || '未命名')}</div>
+                      <div class="org-member-item__email">${escapeHtml(item.email || '—')}</div>
+                    </div>
+                    <div class="org-member-item__meta">
+                      <div>職稱：${escapeHtml(item.title || '—')}</div>
+                      <div>直屬主管：${escapeHtml(item.managerName || '未設定')}${item.managerEmail ? ` (${escapeHtml(item.managerEmail)})` : ''}</div>
+                    </div>
+                  </article>
+                `).join('')}
+              </div>
+            </section>
+          `).join('')}
+        </div>
       </div>`;
   }
 
@@ -510,6 +600,7 @@ const Components = (() => {
     renderLoadError,
     DataTable,
     OrgNode,
+    renderOrgMemberListModal,
     PersonCard,
     RaciRow,
     AuditResultPanel,
