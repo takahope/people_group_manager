@@ -2009,58 +2009,66 @@ const Pages = {
           </div>
         </div>
         <div class="station-modal__content">
-          <section class="station-modal__section">
-            <div class="station-modal__section-head">
-              <h3>負責人設定</h3>
-              <span>${state.canEdit ? '儲存後同步成員主管欄位' : '唯讀模式'}</span>
-            </div>
-            <div class="station-manager-panel">
-              <label class="form-group" style="margin-bottom:0">
-                <span class="form-label">負責駐站</span>
-                <select class="form-control" id="stationManagerSelect" ${state.canEdit ? '' : 'disabled'}>
-                  <option value="">請選擇負責人</option>
-                  ${state.managerOptions.map(item => `
-                    <option value="${Components.escapeHtml(item.email)}" ${item.email === station.managerEmail ? 'selected' : ''}>
-                      ${Components.escapeHtml(item.label)}
-                    </option>`).join('')}
-                </select>
-              </label>
-              <div class="station-manager-panel__summary">
-                <div><span>目前設定</span><strong>${Components.escapeHtml(station.managerLabel || '尚未設定')}</strong></div>
-                <div><span>同步影響</span><strong>${station.memberCount} 位成員主管資訊</strong></div>
+          <aside class="station-modal__sidebar">
+            <section class="station-modal__section station-modal__section--sidebar">
+              <div class="station-modal__section-head">
+                <h3>負責人設定</h3>
+                <span>${state.canEdit ? '儲存後同步成員主管欄位' : '唯讀模式'}</span>
               </div>
-            </div>
-          </section>
-          <section class="station-modal__section">
-            <div class="station-modal__section-head">
-              <h3>成員管理</h3>
-              <span>批次移動收案人員到其他駐站</span>
-            </div>
-            <div class="station-member-toolbar">
-              <input type="search" id="stationMemberSearch" class="form-control" placeholder="搜尋成員姓名、信箱或職稱" value="${Components.escapeHtml(state.memberSearch || '')}">
-              <div class="station-member-toolbar__buttons">
-                <button type="button" class="btn btn--ghost btn--sm" data-action="select-all-members">全選目前列表</button>
-                <button type="button" class="btn btn--ghost btn--sm" data-action="clear-member-selection">清除選取</button>
+              <div class="station-manager-panel">
+                <div class="station-manager-panel__summary">
+                  <div><span>目前設定</span><strong>${Components.escapeHtml(station.managerLabel || '尚未設定')}</strong></div>
+                  <div><span>同步影響</span><strong>${station.memberCount} 位成員主管資訊</strong></div>
+                </div>
+                <label class="form-group" style="margin-bottom:0">
+                  <span class="form-label">負責駐站</span>
+                  <select class="form-control" id="stationManagerSelect" ${state.canEdit ? '' : 'disabled'}>
+                    <option value="">請選擇負責人</option>
+                    ${state.managerOptions.map(item => `
+                      <option value="${Components.escapeHtml(item.email)}" ${item.email === station.managerEmail ? 'selected' : ''}>
+                        ${Components.escapeHtml(item.label)}
+                      </option>`).join('')}
+                  </select>
+                </label>
+                <div class="station-manager-panel__impact">
+                  <span>管理說明</span>
+                  <strong>變更負責人後，本站所有成員的主管欄位會一併更新。</strong>
+                </div>
               </div>
-            </div>
-            <div class="station-member-list">
-              ${members.length > 0 ? members.map(member => `
-                <label class="station-member-row ${state.selectedRowIndices.has(member.rowIndex) ? 'is-selected' : ''}">
-                  <input type="checkbox" data-role="station-member-checkbox" data-row-index="${member.rowIndex}" ${state.selectedRowIndices.has(member.rowIndex) ? 'checked' : ''} ${state.canEdit ? '' : 'disabled'}>
-                  <div class="station-member-row__body">
-                    <div class="station-member-row__title">
-                      <strong>${Components.escapeHtml(member.name || member.email)}</strong>
-                      <span>${Components.escapeHtml(member.title || '未命名職務')}</span>
+            </section>
+          </aside>
+          <section class="station-modal__main">
+            <div class="station-modal__section station-modal__section--main">
+              <div class="station-modal__section-head">
+                <h3>成員管理</h3>
+                <span>批次移動收案人員到其他駐站</span>
+              </div>
+              <div class="station-member-toolbar">
+                <input type="search" id="stationMemberSearch" class="form-control" placeholder="搜尋成員姓名、信箱或職稱" value="${Components.escapeHtml(state.memberSearch || '')}">
+                <div class="station-member-toolbar__buttons">
+                  <button type="button" class="btn btn--ghost btn--sm" data-action="select-all-members">全選目前列表</button>
+                  <button type="button" class="btn btn--ghost btn--sm" data-action="clear-member-selection">清除選取</button>
+                </div>
+              </div>
+              <div class="station-member-list">
+                ${members.length > 0 ? members.map(member => `
+                  <label class="station-member-row ${state.selectedRowIndices.has(member.rowIndex) ? 'is-selected' : ''}">
+                    <input type="checkbox" data-role="station-member-checkbox" data-row-index="${member.rowIndex}" ${state.selectedRowIndices.has(member.rowIndex) ? 'checked' : ''} ${state.canEdit ? '' : 'disabled'}>
+                    <div class="station-member-row__body">
+                      <div class="station-member-row__title">
+                        <strong>${Components.escapeHtml(member.name || member.email)}</strong>
+                        <span>${Components.escapeHtml(member.title || '未命名職務')}</span>
+                      </div>
+                      <div class="station-member-row__meta">
+                        <span>${Components.escapeHtml(member.email || '—')}</span>
+                        <span>主管：${Components.escapeHtml(member.managerName || member.managerEmail || '未設定')}</span>
+                      </div>
                     </div>
-                    <div class="station-member-row__meta">
-                      <span>${Components.escapeHtml(member.email || '—')}</span>
-                      <span>主管：${Components.escapeHtml(member.managerName || member.managerEmail || '未設定')}</span>
-                    </div>
-                  </div>
-                </label>`).join('') : `
-                <div class="empty-state station-empty station-empty--inner">
-                  <p>這個駐站目前沒有符合條件的成員</p>
-                </div>`}
+                  </label>`).join('') : `
+                  <div class="empty-state station-empty station-empty--inner">
+                    <p>這個駐站目前沒有符合條件的成員</p>
+                  </div>`}
+              </div>
             </div>
           </section>
         </div>
