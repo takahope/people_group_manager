@@ -39,32 +39,35 @@ function getOrgMemberList(orgCode) {
 
     const orgData = DataService.getSheet2Data(null);
     const analysis = analyzeOrgGraph(orgData);
-    const org = analysis.nodesByCode.get(orgCode);
-    if (!org) return errorResponse(`找不到組織節點：${orgCode}`);
+    const payload = buildOrgMemberPayload_(orgCode, analysis, DataService.getAllAssignments());
+    return successResponse(payload);
+  } catch (error) {
+    return errorResponse(error.message);
+  }
+}
 
-    const subtreeCodes = analysis.descendantsByCode.get(orgCode) || new Set([orgCode]);
-    const assignments = DataService.getAllAssignments()
-      .filter(item => subtreeCodes.has(item.orgCode));
-    const sections = buildOrgMemberSections_(orgCode, analysis, assignments);
-    const warnings = analysis.warnings.filter(item =>
-      subtreeCodes.has(item.code) || subtreeCodes.has(item.parentCode)
-    );
+/**
+ * 背景預載全部組織節點的成員清單資料。
+ *
+ * 供前端在進入組織頁時靜默抓取，避免逐節點重複打 API。
+ * @returns {string} JSON 回應
+ */
+function getOrgMemberListPrefetchData() {
+  try {
+    if (!checkPermission('org.read')) return errorResponse('無查詢組織成員清單的權限');
+
+    const orgData = DataService.getSheet2Data(null);
+    const analysis = analyzeOrgGraph(orgData);
+    const assignments = DataService.getAllAssignments();
+    const payloadsByCode = {};
+
+    analysis.nodesByCode.forEach((_, orgCode) => {
+      payloadsByCode[orgCode] = buildOrgMemberPayload_(orgCode, analysis, assignments);
+    });
 
     return successResponse({
-      org: {
-        code: org.code,
-        name: org.name,
-        alias: org.alias || '',
-        type: org.type,
-        level: org.level,
-        parentCode: org.parentCode || '',
-      },
-      summary: {
-        orgCount: subtreeCodes.size,
-        assignmentCount: assignments.length,
-      },
-      sections,
-      warnings,
+      generatedAt: new Date().toISOString(),
+      payloadsByCode,
     });
   } catch (error) {
     return errorResponse(error.message);
@@ -276,6 +279,35 @@ function validateOrgCycle_(nodeObj, currentCode) {
   if (!relatedCycle) return null;
 
   return `此設定會形成組織循環：${relatedCycle.join(' -> ')}`;
+}
+
+function buildOrgMemberPayload_(orgCode, analysis, allAssignments) {
+  const org = analysis.nodesByCode.get(orgCode);
+  if (!org) throw new Error(`找不到組織節點：${orgCode}`);
+
+  const subtreeCodes = analysis.descendantsByCode.get(orgCode) || new Set([orgCode]);
+  const assignments = allAssignments.filter(item => subtreeCodes.has(item.orgCode));
+  const sections = buildOrgMemberSections_(orgCode, analysis, assignments);
+  const warnings = analysis.warnings.filter(item =>
+    subtreeCodes.has(item.code) || subtreeCodes.has(item.parentCode)
+  );
+
+  return {
+    org: {
+      code: org.code,
+      name: org.name,
+      alias: org.alias || '',
+      type: org.type,
+      level: org.level,
+      parentCode: org.parentCode || '',
+    },
+    summary: {
+      orgCount: subtreeCodes.size,
+      assignmentCount: assignments.length,
+    },
+    sections,
+    warnings,
+  };
 }
 
 function buildOrgMemberSections_(orgCode, analysis, assignments) {

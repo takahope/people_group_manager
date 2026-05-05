@@ -1329,10 +1329,71 @@ const Pages = {
       <div id="orgTreeContainer" class="card"></div>`;
 
     let activeMemberRequestId = 0;
+    const prefetchState = Pages._orgMemberPrefetchState = {
+      navId: pageCtx.navId,
+      byCode: new Map(),
+      preloadPromise: null,
+      status: 'idle',
+      generatedAt: '',
+    };
+
+    const cacheOrgMemberPayload = (orgCode, payload) => {
+      if (!orgCode || !payload || prefetchState.navId !== pageCtx.navId) return;
+      prefetchState.byCode.set(orgCode, payload);
+    };
+
+    const getCachedOrgMemberPayload = (orgCode) => {
+      if (!orgCode || prefetchState.navId !== pageCtx.navId) return null;
+      return prefetchState.byCode.get(orgCode) || null;
+    };
+
+    const startOrgMemberPrefetch = () => {
+      if (prefetchState.preloadPromise) return prefetchState.preloadPromise;
+
+      prefetchState.status = 'loading';
+      prefetchState.preloadPromise = API.getOrgMemberListPrefetchData()
+        .then(result => {
+          if (!pageCtx.isActive() || prefetchState.navId !== pageCtx.navId) return result;
+
+          const payloadsByCode = result?.payloadsByCode || {};
+          Object.keys(payloadsByCode).forEach(orgCode => {
+            cacheOrgMemberPayload(orgCode, payloadsByCode[orgCode]);
+          });
+
+          prefetchState.status = 'ready';
+          prefetchState.generatedAt = result?.generatedAt || '';
+          return result;
+        })
+        .catch(err => {
+          if (prefetchState.navId !== pageCtx.navId) return null;
+          prefetchState.status = 'error';
+          console.error('組織成員清單預載失敗：', err);
+          return null;
+        });
+
+      return prefetchState.preloadPromise;
+    };
 
     const openOrgMemberModal = async (node) => {
       if (!node || !node.code) return;
       const requestId = ++activeMemberRequestId;
+      const cachedPayload = getCachedOrgMemberPayload(node.code);
+
+      if (cachedPayload) {
+        Components.showModal(
+          `成員清單｜${cachedPayload?.org?.name || node.name || node.code}`,
+          Components.renderOrgMemberListModal(cachedPayload),
+          () => true,
+          '關閉',
+          {
+            modalClassName: 'modal--wide',
+            bodyClassName: 'modal__body--dense',
+            hideConfirm: true,
+            cancelText: '關閉',
+          }
+        );
+        return;
+      }
 
       Components.showModal(
         `成員清單｜${node.name || node.code}`,
@@ -1350,6 +1411,7 @@ const Pages = {
       try {
         const result = await API.getOrgMemberList(node.code);
         if (!pageCtx.isActive() || requestId !== activeMemberRequestId) return;
+        cacheOrgMemberPayload(node.code, result);
         const bodyEl = document.getElementById('modalBody');
         const titleEl = document.getElementById('modalTitle');
         if (!bodyEl || !titleEl) return;
@@ -1413,6 +1475,7 @@ const Pages = {
       }
     };
 
+    startOrgMemberPrefetch();
     await renderTree(null);
 
     const orgTabs = pageCtx.query('#orgTypeTabs');
