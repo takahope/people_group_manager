@@ -1636,54 +1636,47 @@ const Pages = {
   // ========================
   async loadStations(container, user, pageCtx) {
     container.innerHTML = `
-      <div class="page-header"><h1>🏥 駐站管理員儀表板</h1></div>
-      <div class="search-bar" style="margin-bottom:1rem">
-        <input type="search" id="stationSearch" class="search-bar__input" placeholder="搜尋站長姓名…">
-        <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      </div>
-      <div id="stationList"><div class="page-loading"><div class="spinner"></div></div></div>`;
+      <div class="station-shell">
+        <div class="station-hero card">
+          <div>
+            <div class="station-hero__eyebrow">Station Workforce Control</div>
+            <h1>🏥 駐站管理工作台</h1>
+            <p>集中管理駐站負責人與收案人員配置。變更負責人時，系統會同步更新該站成員主管資訊；搬移成員時，會一併更新所在駐站與直屬主管。</p>
+          </div>
+          <div class="station-hero__meta">
+            <label class="station-search">
+              <span>搜尋駐站、負責人、成員</span>
+              <input type="search" id="stationWorkspaceSearch" class="form-control" placeholder="輸入站點名稱、代碼、負責人或成員姓名">
+            </label>
+          </div>
+        </div>
+        <div id="stationWorkspace"><div class="page-loading"><div class="spinner"></div><p>載入駐站工作台…</p></div></div>
+      </div>`;
 
     try {
-      const managers = await API.getStationManagers();
+      const dashboard = await API.getStationManagementDashboard();
       if (!pageCtx.isActive()) return;
-      let filtered = managers;
-
-      const render = () => {
-        const div = pageCtx.query('#stationList');
-        if (!div) return;
-        div.innerHTML = filtered.length === 0 ? '<div class="empty-state"><p>無符合站長</p></div>' :
-          filtered.map(mgr => `
-            <div class="card" style="margin-bottom:.75rem">
-              <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem">
-                <strong>${Components.escapeHtml(mgr.name)}</strong>
-                ${mgr.isConcurrent ? '<span class="badge badge--warning">兼任</span>' : '<span class="badge badge--success">專任</span>'}
-                <span style="color:var(--color-text-sub);font-size:.8rem">${Components.escapeHtml(mgr.email)}</span>
-                <span style="color:var(--color-text-sub);font-size:.8rem;margin-left:auto">${Components.escapeHtml(mgr.title)}</span>
-              </div>
-              ${mgr.members.length > 0 ? `
-                <details>
-                  <summary style="cursor:pointer;font-size:.85rem;color:var(--color-text-sub)">展開 ${mgr.members.length} 位下屬</summary>
-                  <ul style="margin-top:.5rem;padding-left:1rem">
-                    ${mgr.members.map(m => `<li style="font-size:.85rem;padding:.2rem 0">${Components.escapeHtml(m.name)} — ${Components.escapeHtml(m.title)}</li>`).join('')}
-                  </ul>
-                </details>` : '<p style="font-size:.8rem;color:var(--color-text-sub)">暫無下屬</p>'}
-            </div>`).join('');
+      const firstStationCode = (dashboard?.stations || [])[0]?.code || '';
+      Pages._stationState = {
+        pageCtx,
+        canEdit: dashboard?.canEdit === true,
+        managerOptions: Array.isArray(dashboard?.managerOptions) ? dashboard.managerOptions : [],
+        stations: Array.isArray(dashboard?.stations) ? dashboard.stations : [],
+        warnings: Array.isArray(dashboard?.warnings) ? dashboard.warnings : [],
+        search: '',
+        selectedStationCode: firstStationCode,
+        memberSearch: '',
+        selectedRowIndices: new Set(),
+        targetStationCode: '',
       };
-      render();
 
-      const stationSearch = pageCtx.query('#stationSearch');
-      if (!stationSearch) return;
-      stationSearch.addEventListener('input', e => {
-        if (!pageCtx.isActive()) return;
-        const q = e.target.value.toLowerCase();
-        filtered = managers.filter(m => m.name.toLowerCase().includes(q));
-        render();
-      });
+      Pages._bindStationWorkspaceEvents();
+      Pages._renderStationWorkspace();
     } catch (err) {
       if (!pageCtx.isActive()) return;
       console.error('loadStations 失敗：', err);
       API.handleError(err);
-      Components.renderLoadError('stationList', {
+      Components.renderLoadError('stationWorkspace', {
         title: '駐站管理員載入失敗',
         message: '無法取得駐站管理員資料。',
         details: err.message,
@@ -1691,6 +1684,417 @@ const Pages = {
         onAction: () => Router.navigateTo(pageCtx.hash),
       });
     }
+  },
+
+  _bindStationWorkspaceEvents() {
+    const state = Pages._stationState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const container = pageCtx.container;
+    if (!container) return;
+
+    container.oninput = e => {
+      if (!pageCtx.isActive()) return;
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      if (target.id === 'stationWorkspaceSearch') {
+        state.search = target.value || '';
+        Pages._renderStationWorkspace();
+        return;
+      }
+      if (target.id === 'stationMemberSearch') {
+        state.memberSearch = target.value || '';
+        Pages._renderStationWorkspace();
+      }
+    };
+
+    container.onchange = e => {
+      if (!pageCtx.isActive()) return;
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      if (target.id === 'stationTargetSelect') {
+        state.targetStationCode = target.value || '';
+        return;
+      }
+      if (target.matches('[data-role="station-member-checkbox"]')) {
+        const rowIndex = Number(target.getAttribute('data-row-index'));
+        if (!rowIndex) return;
+        if (target.checked) state.selectedRowIndices.add(rowIndex);
+        else state.selectedRowIndices.delete(rowIndex);
+        Pages._renderStationWorkspace();
+      }
+    };
+
+    container.onclick = async e => {
+      if (!pageCtx.isActive()) return;
+      const actionEl = e.target.closest('[data-action]');
+      if (!actionEl) return;
+      const action = actionEl.dataset.action;
+      const stationCode = actionEl.dataset.stationCode || '';
+
+      if (action === 'open-station' && stationCode) {
+        state.selectedStationCode = stationCode;
+        state.memberSearch = '';
+        state.targetStationCode = '';
+        state.selectedRowIndices = new Set();
+        Pages._renderStationWorkspace();
+        return;
+      }
+      if (action === 'close-station-drawer') {
+        state.selectedStationCode = '';
+        state.memberSearch = '';
+        state.targetStationCode = '';
+        state.selectedRowIndices = new Set();
+        Pages._renderStationWorkspace();
+        return;
+      }
+      if (action === 'select-all-members') {
+        const station = Pages._getSelectedStationWorkspace();
+        if (!station) return;
+        Pages._getFilteredStationMembers(station).forEach(member => state.selectedRowIndices.add(member.rowIndex));
+        Pages._renderStationWorkspace();
+        return;
+      }
+      if (action === 'clear-member-selection') {
+        state.selectedRowIndices = new Set();
+        Pages._renderStationWorkspace();
+        return;
+      }
+      if (action === 'save-station-manager' && stationCode) {
+        await Pages._saveStationManager(stationCode);
+        return;
+      }
+      if (action === 'move-station-members' && stationCode) {
+        await Pages._moveSelectedStationMembers(stationCode);
+      }
+    };
+  },
+
+  _renderStationWorkspace() {
+    const state = Pages._stationState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const workspace = pageCtx.query('#stationWorkspace');
+    if (!workspace) return;
+
+    const filteredStations = Pages._getFilteredStationWorkspaceStations();
+    const selectedStation = Pages._getSelectedStationWorkspace();
+    const totalMembers = state.stations.reduce((sum, station) => sum + (station.memberCount || 0), 0);
+    const flaggedStations = state.stations.filter(station => (station.warnings || []).length > 0).length;
+
+    workspace.innerHTML = `
+      <div class="station-overview">
+        <div class="stat-card">
+          <div class="stat-card__label">駐站總數</div>
+          <div class="stat-card__value">${state.stations.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">收案人員</div>
+          <div class="stat-card__value">${totalMembers}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">可編輯權限</div>
+          <div class="stat-card__value">${state.canEdit ? '可編輯' : '唯讀'}</div>
+        </div>
+        <div class="stat-card ${flaggedStations > 0 ? 'stat-card--danger' : ''}">
+          <div class="stat-card__label">資料警示</div>
+          <div class="stat-card__value">${flaggedStations}</div>
+        </div>
+      </div>
+      ${Pages._renderStationWorkspaceWarnings()}
+      <div class="station-layout">
+        <section class="station-list-pane">
+          <div class="station-list-pane__header">
+            <div>
+              <h2>駐站總覽</h2>
+              <p>依站點、負責人或成員快速定位後，點入右側管理。</p>
+            </div>
+            <div class="station-list-pane__meta">${filteredStations.length} / ${state.stations.length} 個駐站</div>
+          </div>
+          <div class="station-card-grid">
+            ${filteredStations.length > 0 ? filteredStations.map(station => Pages._renderStationWorkspaceCard(station)).join('') : `
+              <div class="empty-state station-empty">
+                <div class="empty-state__icon">🗂️</div>
+                <p>查無符合條件的駐站</p>
+              </div>`}
+          </div>
+        </section>
+        <aside class="station-drawer ${selectedStation ? 'is-open' : ''}">
+          ${Pages._renderStationWorkspaceDrawer(selectedStation)}
+        </aside>
+      </div>`;
+  },
+
+  _renderStationWorkspaceWarnings() {
+    const state = Pages._stationState;
+    if (!state || !Array.isArray(state.warnings) || state.warnings.length === 0) return '';
+
+    return `
+      <div class="station-warning-board card">
+        <div class="card__header"><h3 class="card__title">資料警示</h3></div>
+        <div class="station-warning-board__list">
+          ${state.warnings.map(item => `<div class="station-warning-pill">${Components.escapeHtml(item.message || '')}</div>`).join('')}
+        </div>
+      </div>`;
+  },
+
+  _renderStationWorkspaceCard(station) {
+    const state = Pages._stationState;
+    const isSelected = state?.selectedStationCode === station.code;
+    const warningBadges = (station.warnings || []).slice(0, 2).map(message =>
+      `<span class="station-card__warning">${Components.escapeHtml(message)}</span>`
+    ).join('');
+
+    return `
+      <article class="station-card ${isSelected ? 'is-selected' : ''}">
+        <div class="station-card__top">
+          <div>
+            <div class="station-card__code">${Components.escapeHtml(station.code)}</div>
+            <h3>${Components.escapeHtml(station.name || station.code)}</h3>
+          </div>
+          <span class="badge ${station.isManagerConcurrent ? 'badge--warning' : 'badge--success'}">${station.isManagerConcurrent ? '兼任負責人' : '專任負責人'}</span>
+        </div>
+        <div class="station-card__manager">
+          <span>目前負責人</span>
+          <strong>${Components.escapeHtml(station.managerName || '未設定')}</strong>
+          <small>${Components.escapeHtml(station.managerEmail || '請先指派負責人')}</small>
+        </div>
+        <div class="station-card__stats">
+          <div><span>收案人員</span><strong>${station.memberCount || 0}</strong></div>
+          <div><span>資料狀態</span><strong>${(station.warnings || []).length > 0 ? '需處理' : '正常'}</strong></div>
+        </div>
+        ${warningBadges ? `<div class="station-card__warnings">${warningBadges}</div>` : '<div class="station-card__warnings station-card__warnings--ok">沒有待處理警示</div>'}
+        <div class="station-card__actions">
+          <button type="button" class="btn btn--primary btn--sm" data-action="open-station" data-station-code="${Components.escapeHtml(station.code)}">${state?.canEdit ? '管理駐站' : '查看詳情'}</button>
+        </div>
+      </article>`;
+  },
+
+  _renderStationWorkspaceDrawer(station) {
+    const state = Pages._stationState;
+    if (!station) {
+      return `
+        <div class="station-drawer__empty">
+          <div class="empty-state">
+            <div class="empty-state__icon">🧭</div>
+            <p>從左側選擇一個駐站，即可管理負責人與收案人員配置。</p>
+          </div>
+        </div>`;
+    }
+
+    const members = Pages._getFilteredStationMembers(station);
+    const selectedCount = state.selectedRowIndices.size;
+    const targetOptions = state.stations
+      .filter(item => item.code !== station.code)
+      .map(item => `<option value="${Components.escapeHtml(item.code)}" ${item.code === state.targetStationCode ? 'selected' : ''}>${Components.escapeHtml(item.name)} (${Components.escapeHtml(item.code)})</option>`)
+      .join('');
+
+    return `
+      <div class="station-drawer__header">
+        <div>
+          <div class="station-drawer__eyebrow">${Components.escapeHtml(station.code)}</div>
+          <h2>${Components.escapeHtml(station.name)}</h2>
+          <p>${Components.escapeHtml(station.parentCode || '未設定上層節點')}</p>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-action="close-station-drawer">關閉</button>
+      </div>
+
+      <div class="station-drawer__section">
+        <div class="station-drawer__section-head">
+          <h3>負責人設定</h3>
+          <span>${state.canEdit ? '儲存後將同步成員主管欄位' : '唯讀模式'}</span>
+        </div>
+        <div class="station-manager-panel">
+          <label class="form-group" style="margin-bottom:0">
+            <span class="form-label">負責駐站</span>
+            <select class="form-control" id="stationManagerSelect" ${state.canEdit ? '' : 'disabled'}>
+              <option value="">請選擇負責人</option>
+              ${state.managerOptions.map(item => `
+                <option value="${Components.escapeHtml(item.email)}" ${item.email === station.managerEmail ? 'selected' : ''}>
+                  ${Components.escapeHtml(item.label)}
+                </option>`).join('')}
+            </select>
+          </label>
+          <div class="station-manager-panel__summary">
+            <div><span>目前設定</span><strong>${Components.escapeHtml(station.managerLabel || '尚未設定')}</strong></div>
+            <div><span>同步影響</span><strong>${station.memberCount} 位成員主管資訊</strong></div>
+          </div>
+          ${state.canEdit ? `<button type="button" class="btn btn--primary" data-action="save-station-manager" data-station-code="${Components.escapeHtml(station.code)}">儲存負責人變更</button>` : ''}
+        </div>
+      </div>
+
+      <div class="station-drawer__section">
+        <div class="station-drawer__section-head">
+          <h3>成員管理</h3>
+          <span>批次移動收案人員到其他駐站</span>
+        </div>
+        <div class="station-member-toolbar">
+          <input type="search" id="stationMemberSearch" class="form-control" placeholder="搜尋成員姓名、信箱或職稱" value="${Components.escapeHtml(state.memberSearch || '')}">
+          <div class="station-member-toolbar__buttons">
+            <button type="button" class="btn btn--ghost btn--sm" data-action="select-all-members">全選目前列表</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-action="clear-member-selection">清除選取</button>
+          </div>
+        </div>
+        <div class="station-member-transfer">
+          <select class="form-control" id="stationTargetSelect" ${state.canEdit ? '' : 'disabled'}>
+            <option value="">選擇目標駐站</option>
+            ${targetOptions}
+          </select>
+          ${state.canEdit ? `<button type="button" class="btn btn--primary" data-action="move-station-members" data-station-code="${Components.escapeHtml(station.code)}">搬移 ${selectedCount} 位成員</button>` : ''}
+        </div>
+        <div class="station-member-list">
+          ${members.length > 0 ? members.map(member => `
+            <label class="station-member-row ${state.selectedRowIndices.has(member.rowIndex) ? 'is-selected' : ''}">
+              <input type="checkbox" data-role="station-member-checkbox" data-row-index="${member.rowIndex}" ${state.selectedRowIndices.has(member.rowIndex) ? 'checked' : ''} ${state.canEdit ? '' : 'disabled'}>
+              <div class="station-member-row__body">
+                <div class="station-member-row__title">
+                  <strong>${Components.escapeHtml(member.name || member.email)}</strong>
+                  <span>${Components.escapeHtml(member.title || '未命名職務')}</span>
+                </div>
+                <div class="station-member-row__meta">
+                  <span>${Components.escapeHtml(member.email || '—')}</span>
+                  <span>主管：${Components.escapeHtml(member.managerName || member.managerEmail || '未設定')}</span>
+                </div>
+              </div>
+            </label>`).join('') : `
+            <div class="empty-state station-empty station-empty--inner">
+              <p>這個駐站目前沒有符合條件的成員</p>
+            </div>`}
+        </div>
+      </div>`;
+  },
+
+  _getFilteredStationWorkspaceStations() {
+    const state = Pages._stationState;
+    if (!state) return [];
+    const keyword = String(state.search || '').trim().toLowerCase();
+    if (!keyword) return state.stations;
+
+    return state.stations.filter(station => {
+      const memberText = (station.members || [])
+        .map(item => `${item.name || ''} ${item.email || ''} ${item.title || ''}`.toLowerCase())
+        .join(' ');
+      return [
+        station.code,
+        station.name,
+        station.alias,
+        station.managerName,
+        station.managerEmail,
+        memberText,
+      ].some(value => String(value || '').toLowerCase().includes(keyword));
+    });
+  },
+
+  _getSelectedStationWorkspace() {
+    const state = Pages._stationState;
+    if (!state || !state.selectedStationCode) return null;
+    return state.stations.find(station => station.code === state.selectedStationCode) || null;
+  },
+
+  _getFilteredStationMembers(station) {
+    const state = Pages._stationState;
+    const keyword = String(state?.memberSearch || '').trim().toLowerCase();
+    const members = Array.isArray(station?.members) ? station.members : [];
+    if (!keyword) return members;
+
+    return members.filter(member =>
+      [
+        member.name,
+        member.email,
+        member.title,
+        member.managerName,
+        member.managerEmail,
+      ].some(value => String(value || '').toLowerCase().includes(keyword))
+    );
+  },
+
+  async _saveStationManager(stationCode) {
+    const state = Pages._stationState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const select = pageCtx.query('#stationManagerSelect');
+    const managerEmail = String(select?.value || '').trim();
+    if (!managerEmail) {
+      Components.showToast('請先選擇負責人', 'warning');
+      return;
+    }
+
+    try {
+      const result = await API.updateStationManager(stationCode, managerEmail);
+      if (!pageCtx.isActive()) return;
+      Components.showToast(result?.message || '駐站負責人更新成功', 'success');
+      await Pages._reloadStationWorkspace(stationCode);
+    } catch (err) {
+      if (!pageCtx.isActive()) return;
+      API.handleError(err);
+    }
+  },
+
+  async _moveSelectedStationMembers(stationCode) {
+    const state = Pages._stationState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const rowIndices = [...state.selectedRowIndices];
+    const targetStationCode = String(pageCtx.query('#stationTargetSelect')?.value || '').trim();
+    if (rowIndices.length === 0) {
+      Components.showToast('請先選擇至少一位成員', 'warning');
+      return;
+    }
+    if (!targetStationCode) {
+      Components.showToast('請先選擇目標駐站', 'warning');
+      return;
+    }
+
+    const currentStation = Pages._getSelectedStationWorkspace();
+    const targetStation = state.stations.find(item => item.code === targetStationCode);
+    if (!currentStation || !targetStation) return;
+
+    Components.showModal(
+      '確認搬移成員',
+      `<p>將 <strong>${rowIndices.length}</strong> 位成員從 <strong>${Components.escapeHtml(currentStation.name)}</strong> 搬移到 <strong>${Components.escapeHtml(targetStation.name)}</strong>。</p><p style="margin-top:.5rem;color:var(--color-text-sub)">系統會同步更新成員的駐站代碼、駐站名稱與直屬主管。</p>`,
+      async () => {
+        try {
+          const result = await API.reassignStationMembers(rowIndices, targetStationCode);
+          if (!pageCtx.isActive()) return false;
+          Components.showToast(result?.message || '駐站成員調整成功', 'success');
+          await Pages._reloadStationWorkspace(targetStationCode);
+          return true;
+        } catch (err) {
+          if (!pageCtx.isActive()) return false;
+          API.handleError(err);
+          return false;
+        }
+      },
+      '確認搬移',
+      {
+        closeBeforeConfirm: false,
+      }
+    );
+  },
+
+  async _reloadStationWorkspace(selectedStationCode) {
+    const state = Pages._stationState;
+    const pageCtx = state?.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+
+    const dashboard = await API.getStationManagementDashboard();
+    if (!pageCtx.isActive()) return;
+
+    state.canEdit = dashboard?.canEdit === true;
+    state.managerOptions = Array.isArray(dashboard?.managerOptions) ? dashboard.managerOptions : [];
+    state.stations = Array.isArray(dashboard?.stations) ? dashboard.stations : [];
+    state.warnings = Array.isArray(dashboard?.warnings) ? dashboard.warnings : [];
+    state.selectedStationCode = selectedStationCode || state.stations[0]?.code || '';
+    state.memberSearch = '';
+    state.targetStationCode = '';
+    state.selectedRowIndices = new Set();
+    Pages._renderStationWorkspace();
   },
 
   // ========================

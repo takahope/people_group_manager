@@ -79,6 +79,154 @@ function getOrgMemberListPrefetchData() {
 // =============================================
 
 /**
+ * 取得駐站管理工作台所需資料。
+ *
+ * @returns {string} JSON 回應
+ */
+function getStationManagementDashboard() {
+  try {
+    if (!checkPermission('station.read')) return errorResponse('無查詢駐站管理員的權限');
+
+    const allPersonnel = DataService.getSheet1Data();
+    const allAssignments = DataService.getAllAssignments();
+    const stationNodes = DataService.getSheet2Data(null)
+      .filter(node => isStationOrgCode_(node.code))
+      .sort((a, b) => String(a.name || a.code).localeCompare(String(b.name || b.code), 'zh-Hant'));
+
+    const managerOptions = allPersonnel
+      .filter(person => person.status === '在職')
+      .sort((a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), 'zh-Hant'))
+      .map(person => ({
+        email: person.email,
+        name: person.name,
+        label: `${person.name} (${person.email})`,
+      }));
+
+    const stations = stationNodes.map(node => buildStationWorkspaceCard_(node, allAssignments));
+    const warnings = buildStationWorkspaceWarnings_(stations);
+
+    return successResponse({
+      canEdit: checkPermission('station.write'),
+      managerOptions,
+      stations,
+      warnings,
+    });
+  } catch (error) {
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 更新駐站負責人，並同步更新該站所有成員主管欄位。
+ *
+ * @param {string} stationCode
+ * @param {string} managerEmail
+ * @returns {string} JSON 回應
+ */
+function updateStationManager(stationCode, managerEmail) {
+  try {
+    if (!checkPermission('station.write')) return errorResponse('無編輯駐站管理員的權限');
+    if (!stationCode) return errorResponse('缺少 stationCode 參數');
+    if (!managerEmail) return errorResponse('缺少 managerEmail 參數');
+
+    const station = DataService.findOrgByCode(stationCode);
+    if (!station || !isStationOrgCode_(station.code)) {
+      return errorResponse(`找不到駐站：${stationCode}`);
+    }
+
+    const manager = DataService.findPersonByEmail(managerEmail);
+    if (!manager || manager.status !== '在職') {
+      return errorResponse(`負責人 ${managerEmail} 不存在或非在職`);
+    }
+
+    const updatedNode = {
+      ...station,
+      managerEmail: manager.email,
+      managerName: manager.name,
+    };
+    const updated = DataService.updateOrgNodeByCode(station.code, updatedNode);
+    if (!updated) return errorResponse(`更新駐站負責人失敗：${station.code}`);
+
+    const members = DataService.getAllAssignments()
+      .filter(item => item.orgCode === station.code);
+    members.forEach(item => {
+      DataService.updateAssignmentByRow(item.rowIndex, {
+        ...item,
+        managerEmail: manager.email,
+        managerName: manager.name,
+      });
+    });
+
+    DataService.appendAuditLog('UPDATE', `駐站負責人: ${station.code}`, `managerEmail: ${manager.email}`);
+    return successResponse({ message: '駐站負責人更新成功' });
+  } catch (error) {
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 批次搬移駐站成員至其他駐站。
+ *
+ * @param {Array<number>} rowIndices
+ * @param {string} targetStationCode
+ * @returns {string} JSON 回應
+ */
+function reassignStationMembers(rowIndices, targetStationCode) {
+  try {
+    if (!checkPermission('station.write')) return errorResponse('無調整駐站成員的權限');
+    if (!Array.isArray(rowIndices) || rowIndices.length === 0) return errorResponse('請至少選擇一位成員');
+    if (!targetStationCode) return errorResponse('缺少 targetStationCode 參數');
+
+    const targetStation = DataService.findOrgByCode(targetStationCode);
+    if (!targetStation || !isStationOrgCode_(targetStation.code)) {
+      return errorResponse(`找不到目標駐站：${targetStationCode}`);
+    }
+    if (!targetStation.managerEmail) {
+      return errorResponse(`目標駐站 ${targetStation.name || targetStation.code} 尚未設定負責人`);
+    }
+
+    const allAssignments = DataService.getAllAssignments();
+    const byRowIndex = new Map(allAssignments.map(item => [Number(item.rowIndex), item]));
+    const uniqueRowIndices = [...new Set(rowIndices.map(item => Number(item)).filter(Boolean))];
+
+    for (const rowIndex of uniqueRowIndices) {
+      const assignment = byRowIndex.get(rowIndex);
+      if (!assignment) return errorResponse(`找不到職務配置列：${rowIndex}`);
+      if (!isStationOrgCode_(assignment.orgCode)) {
+        return errorResponse(`職務配置列 ${rowIndex} 不屬於駐站成員，無法搬移`);
+      }
+      if (assignment.orgCode === targetStation.code) {
+        return errorResponse(`職務配置列 ${rowIndex} 已位於目標駐站`);
+      }
+    }
+
+    uniqueRowIndices.forEach(rowIndex => {
+      const assignment = byRowIndex.get(rowIndex);
+      DataService.updateAssignmentByRow(rowIndex, {
+        ...assignment,
+        orgCode: targetStation.code,
+        orgName: targetStation.name,
+        managerEmail: targetStation.managerEmail || '',
+        managerName: targetStation.managerName || '',
+      });
+    });
+
+    DataService.appendAuditLog(
+      'UPDATE',
+      `駐站成員搬移: ${targetStation.code}`,
+      JSON.stringify({ rowIndices: uniqueRowIndices, targetStationCode: targetStation.code })
+    );
+
+    return successResponse({
+      message: '駐站成員調整成功',
+      updatedCount: uniqueRowIndices.length,
+    });
+  } catch (error) {
+    return errorResponse(error.message);
+  }
+}
+
+/**
  * 取得所有駐站管理員清單（含兼任識別）
  * 
  * 查詢邏輯：
@@ -137,6 +285,76 @@ function buildStationManagerCard(email) {
 
 function isStationOrgCode_(orgCode) {
   return String(orgCode || '').trim().toUpperCase().startsWith('GRP-CO-');
+}
+
+function buildStationWorkspaceCard_(stationNode, allAssignments) {
+  const manager = stationNode.managerEmail
+    ? DataService.findPersonByEmail(stationNode.managerEmail)
+    : null;
+  const members = allAssignments
+    .filter(item => item.orgCode === stationNode.code)
+    .sort((a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), 'zh-Hant'));
+  const warnings = [];
+
+  if (!stationNode.managerEmail) {
+    warnings.push('尚未設定駐站負責人');
+  }
+  if (stationNode.managerEmail && members.some(item => item.managerEmail !== stationNode.managerEmail)) {
+    warnings.push('部分成員主管資訊與駐站負責人不一致');
+  }
+  if (members.length === 0) {
+    warnings.push('目前沒有配置任何收案人員');
+  }
+
+  return {
+    code: stationNode.code,
+    name: stationNode.name,
+    alias: stationNode.alias || '',
+    parentCode: stationNode.parentCode || '',
+    managerEmail: stationNode.managerEmail || '',
+    managerName: stationNode.managerName || (manager ? manager.name : ''),
+    managerLabel: stationNode.managerEmail
+      ? `${stationNode.managerName || (manager ? manager.name : stationNode.managerEmail)} (${stationNode.managerEmail})`
+      : '',
+    memberCount: members.length,
+    isManagerConcurrent: stationNode.managerEmail
+      ? hasNonStationAssignment_(stationNode.managerEmail, allAssignments)
+      : false,
+    warnings,
+    members: members.map(item => ({
+      rowIndex: item.rowIndex,
+      email: item.email,
+      name: item.name,
+      title: item.title,
+      orgCode: item.orgCode,
+      orgName: item.orgName,
+      managerEmail: item.managerEmail || '',
+      managerName: item.managerName || '',
+    })),
+  };
+}
+
+function buildStationWorkspaceWarnings_(stations) {
+  const warnings = [];
+  stations.forEach(station => {
+    station.warnings.forEach(message => {
+      warnings.push({
+        code: station.code,
+        stationName: station.name,
+        message: `${station.name || station.code}：${message}`,
+      });
+    });
+  });
+  return warnings;
+}
+
+function hasNonStationAssignment_(email, allAssignments) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return false;
+  return allAssignments.some(item =>
+    String(item.email || '').trim().toLowerCase() === normalizedEmail
+      && !isStationOrgCode_(item.orgCode)
+  );
 }
 
 // =============================================

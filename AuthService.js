@@ -264,6 +264,7 @@ const PERMISSION_MAP = {
   'raci.read':             new Set([ROLES.ADMIN, ROLES.HR, ROLES.MGR, ROLES.AUDITOR, ROLES.STAFF, ROLES.EXTERNAL]),
   'rolemap.read':          new Set([ROLES.ADMIN, ROLES.HR, ROLES.AUDITOR]),
   'station.read':          new Set([ROLES.ADMIN, ROLES.HR, ROLES.MGR, ROLES.AUDITOR]),
+  'station.write':         new Set([ROLES.ADMIN, ROLES.HR, ROLES.MGR, ROLES.AUDITOR]),
   'audit.run':             new Set([ROLES.ADMIN, ROLES.AUDITOR]),
   'audit.export':          new Set([ROLES.ADMIN, ROLES.AUDITOR]),
 };
