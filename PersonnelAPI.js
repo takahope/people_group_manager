@@ -233,33 +233,52 @@ function getPersonnelAssignmentDetails(targetEmail) {
 
     const person = DataService.findPersonByEmail(targetEmail);
     if (!person) return errorResponse(`找不到人員：${targetEmail}`);
-
-    const assignments = DataService.getSheet3DataByEmail(targetEmail);
-    const items = buildAssignmentListItems(assignments);
-    const groups = {
-      primary: items.filter(item => item.assignmentType === '主職'),
-      concurrent: items.filter(item => item.assignmentType === '兼任'),
-      vertical: items.filter(item => item.assignmentType === '垂直兼任'),
-      matrix: items.filter(item => item.assignmentType === '矩陣兼任'),
-    };
-
-    return successResponse({
-      person: {
-        email: person.email,
-        name: person.name,
-        status: person.status,
-      },
-      summary: {
-        total: items.length,
-        primaryCount: groups.primary.length,
-        concurrentCount: groups.concurrent.length,
-        verticalCount: groups.vertical.length,
-        matrixCount: groups.matrix.length,
-      },
-      groups,
-    });
+    return successResponse(
+      buildPersonnelAssignmentDetailsPayload_(person, DataService.getSheet3DataByEmail(targetEmail))
+    );
   } catch (error) {
     Logger.log('getPersonnelAssignmentDetails 錯誤：' + (error.stack || error.message));
+    return errorResponse(error.message);
+  }
+}
+
+/**
+ * 批次預載目前使用者可見人員的職務詳情。
+ *
+ * 供人員管理頁背景靜默載入，避免逐筆點擊時再打 API。
+ * @returns {string} JSON 回應
+ */
+function getPersonnelAssignmentDetailsPrefetchData() {
+  try {
+    const visiblePersonnel = getAccessiblePersonnelList_();
+    const visibleEmailSet = new Set(
+      visiblePersonnel.map(item => String(item.email || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const assignments = DataService.getAllAssignments()
+      .filter(item => visibleEmailSet.has(String(item.email || '').trim().toLowerCase()));
+    const groupedAssignments = new Map();
+
+    assignments.forEach(item => {
+      const emailKey = String(item.email || '').trim().toLowerCase();
+      if (!groupedAssignments.has(emailKey)) groupedAssignments.set(emailKey, []);
+      groupedAssignments.get(emailKey).push(item);
+    });
+
+    const payloadsByEmail = {};
+    visiblePersonnel.forEach(person => {
+      const normalizedEmail = String(person.email || '').trim().toLowerCase();
+      payloadsByEmail[person.email] = buildPersonnelAssignmentDetailsPayload_(
+        person,
+        groupedAssignments.get(normalizedEmail) || []
+      );
+    });
+
+    return successResponse({
+      generatedAt: new Date().toISOString(),
+      payloadsByEmail,
+    });
+  } catch (error) {
+    Logger.log('getPersonnelAssignmentDetailsPrefetchData 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
 }
@@ -395,6 +414,59 @@ function canAccessPersonnelTarget_(targetEmail) {
   }
 
   return false;
+}
+
+function getAccessiblePersonnelList_() {
+  const currentEmail = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+
+  if (checkPermission('personnel.read.all')) {
+    return DataService.getSheet1Data();
+  }
+
+  if (checkPermission('personnel.read.dept')) {
+    const directReports = new Set(
+      DataService.getAllAssignments()
+        .filter(item => String(item.managerEmail || '').trim().toLowerCase() === currentEmail)
+        .map(item => String(item.email || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    return DataService.getSheet1Data().filter(person =>
+      directReports.has(String(person.email || '').trim().toLowerCase())
+    );
+  }
+
+  if (checkPermission('personnel.read.self')) {
+    const self = DataService.findPersonByEmail(currentEmail);
+    return self ? [self] : [];
+  }
+
+  throw new Error('無查詢人員的權限');
+}
+
+function buildPersonnelAssignmentDetailsPayload_(person, assignments) {
+  const items = buildAssignmentListItems(assignments);
+  const groups = {
+    primary: items.filter(item => item.assignmentType === '主職'),
+    concurrent: items.filter(item => item.assignmentType === '兼任'),
+    vertical: items.filter(item => item.assignmentType === '垂直兼任'),
+    matrix: items.filter(item => item.assignmentType === '矩陣兼任'),
+  };
+
+  return {
+    person: {
+      email: person.email,
+      name: person.name,
+      status: person.status,
+    },
+    summary: {
+      total: items.length,
+      primaryCount: groups.primary.length,
+      concurrentCount: groups.concurrent.length,
+      verticalCount: groups.vertical.length,
+      matrixCount: groups.matrix.length,
+    },
+    groups,
+  };
 }
 
 function buildAssignmentListItems(assignments) {

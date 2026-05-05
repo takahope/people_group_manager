@@ -491,6 +491,13 @@ const Pages = {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
     const statusOptions = ['全部', '在職', '育嬰', '休假', '留職停薪'];
+    const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
+      navId: pageCtx.navId,
+      byEmail: new Map(),
+      preloadPromise: null,
+      status: 'idle',
+      generatedAt: '',
+    };
 
     container.innerHTML = `
       <div class="page-header">
@@ -511,8 +518,48 @@ const Pages = {
       </div>
     `;
 
+    const cacheAssignmentDetails = (email, payload) => {
+      if (!email || !payload || assignmentPrefetchState.navId !== pageCtx.navId) return;
+      assignmentPrefetchState.byEmail.set(String(email).trim().toLowerCase(), payload);
+    };
+
+    const getCachedAssignmentDetails = (email) => {
+      if (!email || assignmentPrefetchState.navId !== pageCtx.navId) return null;
+      return assignmentPrefetchState.byEmail.get(String(email).trim().toLowerCase()) || null;
+    };
+
+    const startAssignmentPrefetch = () => {
+      if (assignmentPrefetchState.preloadPromise) return assignmentPrefetchState.preloadPromise;
+
+      assignmentPrefetchState.status = 'loading';
+      assignmentPrefetchState.preloadPromise = API.getPersonnelAssignmentDetailsPrefetchData()
+        .then(result => {
+          if (!pageCtx.isActive() || assignmentPrefetchState.navId !== pageCtx.navId) return result;
+
+          const payloadsByEmail = result?.payloadsByEmail || {};
+          Object.keys(payloadsByEmail).forEach(email => {
+            cacheAssignmentDetails(email, payloadsByEmail[email]);
+          });
+
+          assignmentPrefetchState.status = 'ready';
+          assignmentPrefetchState.generatedAt = result?.generatedAt || '';
+          return result;
+        })
+        .catch(err => {
+          if (assignmentPrefetchState.navId !== pageCtx.navId) return null;
+          assignmentPrefetchState.status = 'error';
+          console.error('個人職務資料預載失敗：', err);
+          return null;
+        });
+
+      return assignmentPrefetchState.preloadPromise;
+    };
+
     try {
-      let data = await API.getAllPersonnel();
+      const personnelPromise = API.getAllPersonnel();
+      startAssignmentPrefetch();
+
+      let data = await personnelPromise;
       if (!pageCtx.isActive()) return;
       let filtered = data;
       let activeStatus = '全部';
@@ -671,6 +718,33 @@ const Pages = {
 
   async _showPersonnelAssignments(email) {
     if (!email) return;
+    const pageCtx = Router.getActivePageContext();
+    const prefetchState = Pages._personnelAssignmentPrefetchState;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const getCachedPayload = () => (prefetchState && prefetchState.navId === pageCtx?.navId
+      ? prefetchState.byEmail.get(normalizedEmail) || null
+      : null);
+    let cachedPayload = getCachedPayload();
+
+    if (cachedPayload) {
+      Components.showModal(
+        `職務查看｜${cachedPayload?.person?.name || email}`,
+        Components.renderPersonnelAssignmentModal(cachedPayload),
+        () => true,
+        '關閉',
+        {
+          modalClassName: 'modal--wide',
+          hideConfirm: true,
+          cancelText: '關閉',
+        }
+      );
+      return;
+    }
+
+    const shouldWaitForPrefetch = prefetchState
+      && prefetchState.navId === pageCtx?.navId
+      && prefetchState.status === 'loading'
+      && prefetchState.preloadPromise;
 
     Components.showModal(
       '職務查看',
@@ -685,7 +759,27 @@ const Pages = {
     );
 
     try {
+      if (shouldWaitForPrefetch) {
+        await prefetchState.preloadPromise;
+        cachedPayload = getCachedPayload();
+      }
+
+      if (cachedPayload) {
+        const bodyEl = document.getElementById('modalBody');
+        const titleEl = document.getElementById('modalTitle');
+        if (!bodyEl || !titleEl) return;
+
+        titleEl.textContent = `職務查看｜${cachedPayload?.person?.name || email}`;
+        bodyEl.innerHTML = Components.renderPersonnelAssignmentModal(cachedPayload);
+        bodyEl.scrollTop = 0;
+        bodyEl.scrollLeft = 0;
+        return;
+      }
+
       const result = await API.getPersonnelAssignmentDetails(email);
+      if (prefetchState && prefetchState.navId === pageCtx?.navId) {
+        prefetchState.byEmail.set(normalizedEmail, result);
+      }
       const bodyEl = document.getElementById('modalBody');
       const titleEl = document.getElementById('modalTitle');
       if (!bodyEl || !titleEl) return;
