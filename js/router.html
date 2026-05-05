@@ -1990,6 +1990,7 @@ const Pages = {
     const state = Pages._stationState;
     const members = Pages._getFilteredStationMembers(station);
     const selectedCount = state.selectedRowIndices.size;
+    const canMoveMembers = state.canEdit && selectedCount > 0 && Boolean(state.targetStationCode);
     const targetOptions = state.stations
       .filter(item => item.code !== station.code)
       .map(item => `<option value="${Components.escapeHtml(item.code)}" ${item.code === state.targetStationCode ? 'selected' : ''}>${Components.escapeHtml(item.name)} (${Components.escapeHtml(item.code)})</option>`)
@@ -2034,6 +2035,10 @@ const Pages = {
                   <span>管理說明</span>
                   <strong>變更負責人後，本站所有成員的主管欄位會一併更新。</strong>
                 </div>
+                ${state.canEdit ? `
+                  <div class="station-manager-panel__actions">
+                    <button type="button" class="btn btn--primary" data-action="save-station-manager" data-station-code="${Components.escapeHtml(station.code)}">儲存負責人變更</button>
+                  </div>` : ''}
               </div>
             </section>
           </aside>
@@ -2069,18 +2074,21 @@ const Pages = {
                     <p>這個駐站目前沒有符合條件的成員</p>
                   </div>`}
               </div>
+              <div class="station-member-transfer-bar">
+                <div class="station-member-transfer-bar__meta">
+                  <span>已選成員</span>
+                  <strong>${selectedCount} 位</strong>
+                </div>
+                <div class="station-member-transfer">
+                  <select class="form-control" id="stationTargetSelect" ${state.canEdit ? '' : 'disabled'}>
+                    <option value="">選擇目標駐站</option>
+                    ${targetOptions}
+                  </select>
+                  ${state.canEdit ? `<button type="button" class="btn btn--primary" data-action="move-station-members" data-station-code="${Components.escapeHtml(station.code)}" ${canMoveMembers ? '' : 'disabled'}>搬移 ${selectedCount} 位成員</button>` : ''}
+                </div>
+              </div>
             </div>
           </section>
-        </div>
-        <div class="station-modal__actions">
-          <div class="station-member-transfer">
-            <select class="form-control" id="stationTargetSelect" ${state.canEdit ? '' : 'disabled'}>
-              <option value="">選擇目標駐站</option>
-              ${targetOptions}
-            </select>
-            ${state.canEdit ? `<button type="button" class="btn btn--primary" data-action="move-station-members" data-station-code="${Components.escapeHtml(station.code)}">搬移 ${selectedCount} 位成員</button>` : ''}
-          </div>
-          ${state.canEdit ? `<button type="button" class="btn btn--primary" data-action="save-station-manager" data-station-code="${Components.escapeHtml(station.code)}">儲存負責人變更</button>` : ''}
         </div>
       </div>`;
   },
@@ -2105,6 +2113,7 @@ const Pages = {
       if (!(target instanceof HTMLElement)) return;
       if (target.id === 'stationTargetSelect') {
         state.targetStationCode = target.value || '';
+        Pages._rerenderActiveStationWorkspaceModal();
         return;
       }
       if (target.matches('[data-role="station-member-checkbox"]')) {

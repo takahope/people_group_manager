@@ -794,7 +794,7 @@ ul, ol { list-style: none; }
 }
 
 .station-modal__section--main {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   min-height: 0;
   height: 100%;
 }
@@ -804,7 +804,9 @@ ul, ol { list-style: none; }
 .station-member-toolbar,
 .station-member-toolbar__buttons,
 .station-manager-panel__summary,
-.station-modal__actions {
+.station-manager-panel__actions,
+.station-member-transfer-bar,
+.station-member-transfer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -862,6 +864,11 @@ ul, ol { list-style: none; }
   line-height: 1.45;
 }
 
+.station-manager-panel__actions {
+  justify-content: flex-end;
+  padding-top: .25rem;
+}
+
 .station-manager-panel__summary span,
 .station-member-row__meta {
   color: var(--color-text-sub);
@@ -881,6 +888,28 @@ ul, ol { list-style: none; }
   flex-wrap: wrap;
 }
 
+.station-member-transfer-bar {
+  align-items: end;
+  gap: 1rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.station-member-transfer-bar__meta {
+  display: grid;
+  gap: .2rem;
+  min-width: 110px;
+}
+
+.station-member-transfer-bar__meta span {
+  color: var(--color-text-sub);
+  font-size: .78rem;
+}
+
+.station-member-transfer-bar__meta strong {
+  font-size: .96rem;
+}
+
 .station-member-list {
   align-content: start;
   min-height: 0;
@@ -888,23 +917,14 @@ ul, ol { list-style: none; }
   padding-right: .25rem;
 }
 
-.station-modal__actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding: 1rem 1.25rem;
-  border-top: 1px solid var(--color-border);
-  background: rgba(255,255,255,.98);
-  backdrop-filter: blur(6px);
-}
-
-.station-modal__actions .btn {
-  flex-shrink: 0;
-}
-
 .station-member-transfer .form-control {
   flex: 1;
   min-width: 220px;
+}
+
+.station-member-transfer .btn,
+.station-manager-panel__actions .btn {
+  flex-shrink: 0;
 }
 
 .station-member-row {
@@ -951,8 +971,7 @@ ul, ol { list-style: none; }
 
 @media (max-width: 1320px) {
   .station-group__header,
-  .station-modal__header,
-  .station-modal__actions {
+  .station-modal__header {
     flex-direction: column;
     align-items: stretch;
   }
@@ -982,7 +1001,8 @@ ul, ol { list-style: none; }
   .station-group__summary,
   .station-group__header-main,
   .station-member-toolbar,
-  .station-modal__section-head {
+  .station-modal__section-head,
+  .station-member-transfer-bar {
     flex-direction: column;
     align-items: stretch;
   }
