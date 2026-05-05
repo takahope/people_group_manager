@@ -27,6 +27,9 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 /** @const {string} PropertiesService 的 Session Key 前綴 */
 const SESSION_KEY_PREFIX = 'HR_SESSION_';
 
+/** @const {string} Script Properties 中 admin 白名單 key */
+const ADMIN_ROLE_EMAILS_KEY = 'ADMIN_ROLE_EMAILS';
+
 // =============================================
 // Public API
 // =============================================
@@ -144,9 +147,9 @@ function clearCurrentUserSession() {
 // =============================================
 
 /**
- * 根據 Email 查詢 Sheet 3，解析使用者角色
+ * 根據 Email 與人員/職務資料解析使用者角色
  * 
- * 角色判斷順序（高→低）：ADMIN → HR → AUDITOR → MGR → STAFF → EXTERNAL
+ * 角色判斷順序（高→低）：ADMIN → HR → AUDITOR → MGR → EXTERNAL → STAFF
  * 提取此函式以降低 getCurrentUser 的認知複雜度
  * 
  * @param {string} email
@@ -159,7 +162,7 @@ function resolveUserRole(email) {
   const personnel = DataService.findPersonByEmail(email);
   if (!personnel) return null;
 
-  // 查詢 Sheet 3 取得職務配置
+  // 查詢 Sheet 3 取得職務配置（供非 admin 角色判斷使用）
   const assignments = DataService.findAssignmentsByEmail(email);
 
   // 依序判斷角色（Guard Clause 風格：高權限先判斷）
@@ -183,7 +186,7 @@ function resolveUserRole(email) {
  * @returns {string} 角色代碼
  */
 function determineRole(email, personnel, assignments) {
-  if (isAdmin(assignments))       return ROLES.ADMIN;
+  if (isAdminEmail(email))        return ROLES.ADMIN;
   if (isHR(assignments))          return ROLES.HR;
   if (isAuditor(assignments))     return ROLES.AUDITOR;
   if (isManager(email))           return ROLES.MGR;
@@ -191,11 +194,28 @@ function determineRole(email, personnel, assignments) {
   return ROLES.STAFF; // 預設角色
 }
 
-/** 職稱含「執行長」或「部長」 → 系統管理員 */
-function isAdmin(assignments) {
-  return assignments.some(a =>
-    a.title.includes('執行長') || a.title.includes('部長')
+/** Email 命中 Script Properties 白名單 → 系統管理員 */
+function isAdminEmail(email) {
+  if (!email) return false;
+  return getAdminRoleEmailSet_().has(normalizeEmail_(email));
+}
+
+function getAdminRoleEmailSet_() {
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(ADMIN_ROLE_EMAILS_KEY);
+
+  if (!raw) return new Set();
+
+  return new Set(
+    String(raw)
+      .split(',')
+      .map(normalizeEmail_)
+      .filter(Boolean)
   );
+}
+
+function normalizeEmail_(email) {
+  return String(email || '').trim().toLowerCase();
 }
 
 /** 所屬組別為 GRP-ADMIN 或 GRP-PLAN → HR 人員 */
