@@ -267,8 +267,8 @@ function buildStationManagerCard(email) {
   const assignments = DataService.getSheet3DataByEmail(email);
   const title = '駐站管理員';
 
-  // 兼任標記：除了 GRP-CO-* 以外還有其他職務配置則視為兼任
-  const isConcurrent = assignments.some(a => !isStationOrgCode_(a.orgCode));
+  // 兼任標記：只要任一職稱含「長」即視為兼任；否則只要有 GRP-CO-* 即視為專任
+  const isConcurrent = getStationManagerConcurrency_(email, assignments);
 
   // 下屬成員：以此 email 為直屬主管的所有 GRP-CO-* 成員
   const members = DataService.getAllAssignments()
@@ -318,7 +318,7 @@ function buildStationWorkspaceCard_(stationNode, allAssignments) {
       : '',
     memberCount: members.length,
     isManagerConcurrent: stationNode.managerEmail
-      ? hasNonStationAssignment_(stationNode.managerEmail, allAssignments)
+      ? getStationManagerConcurrency_(stationNode.managerEmail, allAssignments)
       : false,
     warnings,
     members: members.map(item => ({
@@ -348,13 +348,23 @@ function buildStationWorkspaceWarnings_(stations) {
   return warnings;
 }
 
-function hasNonStationAssignment_(email, allAssignments) {
+function getStationManagerConcurrency_(email, allAssignments) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) return false;
-  return allAssignments.some(item =>
+
+  const assignments = (allAssignments || []).filter(item =>
     String(item.email || '').trim().toLowerCase() === normalizedEmail
-      && !isStationOrgCode_(item.orgCode)
   );
+  if (assignments.length === 0) return false;
+
+  const hasLeaderTitle = assignments.some(item => titleContainsStationLeaderKeyword_(item.title));
+  if (hasLeaderTitle) return true;
+
+  return false;
+}
+
+function titleContainsStationLeaderKeyword_(title) {
+  return String(title || '').trim().includes('長');
 }
 
 // =============================================
