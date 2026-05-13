@@ -230,7 +230,7 @@ function reassignStationMembers(rowIndices, targetStationCode) {
  * 取得所有駐站管理員清單（含兼任識別）
  * 
  * 查詢邏輯：
- * 1. 找出 Sheet 3 中所有 orgCode 以 GRP-CO- 開頭成員的直屬主管 Email（去重）
+ * 1. 找出 Sheet 3 中所有駐站成員的直屬主管 Email（去重）
  * 2. 對每位站長查詢其在 Sheet 3 的職務，判斷是否兼任
  * 
  * @returns {string} JSON 回應
@@ -239,7 +239,7 @@ function getStationManagers() {
   try {
     if (!checkPermission('station.read')) return errorResponse('無查詢駐站管理員的權限');
 
-    // 1. 取出所有 GRP-CO-* 成員的直屬主管 Email（去重）
+    // 1. 取出所有駐站成員的直屬主管 Email（去重）
     const recMembers = DataService.getAllAssignments()
       .filter(a => isStationOrgCode_(a.orgCode));
     const managerEmails = [...new Set(
@@ -267,10 +267,10 @@ function buildStationManagerCard(email) {
   const assignments = DataService.getSheet3DataByEmail(email);
   const title = '駐站管理員';
 
-  // 兼任標記：只要任一職稱含「長」即視為兼任；否則只要有 GRP-CO-* 即視為專任
+  // 兼任標記：只要任一職稱含「長」即視為兼任；否則只要有駐站職務即視為專任
   const isConcurrent = getStationManagerConcurrency_(email, assignments);
 
-  // 下屬成員：以此 email 為直屬主管的所有 GRP-CO-* 成員
+  // 下屬成員：以此 email 為直屬主管的所有駐站成員
   const members = DataService.getAllAssignments()
     .filter(a => isStationOrgCode_(a.orgCode) && a.managerEmail === email);
 

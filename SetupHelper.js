@@ -155,7 +155,7 @@ function injectSampleData_DEV_ONLY() {
     ['ORG', 3, 'DEPT-ADMIN',  '行政部',      '策略辦公室', 'ORG-EXEC', 'e005@example.org', '林行政部長'],
     ['ORG', 4, 'GRP-ADMIN',   '行政支援組',  '',       'DEPT-ADMIN','e005@example.org', '林行政部長'],
     ['ORG', 4, 'GRP-INFO',    '資訊組',      '',       'DEPT-INFO', 'e004@example.org', '陳資訊部長'],
-    ['ORG', 4, 'GRP-REC',     '收案組',      '',       'DEPT-BIO',  'e003@example.org', '張生醫部長'],
+    ['ORG', 4, 'GRP-CO-REC',  '收案組',      '',       'DEPT-BIO',  'e003@example.org', '張生醫部長'],
     ['TF',  2, 'TF-COMM',     '資安個資管理委員會', '', '',         'e001@example.org', '王代表'],
     ['TF',  3, 'TF-GRP-SEC',  '資安執行小組', '',      'TF-COMM',   'e004@example.org', '陳資訊部長'],
     ['TF',  3, 'TF-GRP-PIMS', '個資管理執行小組', '',  'TF-COMM',   'e003@example.org', '張生醫部長'],
@@ -173,7 +173,7 @@ function injectSampleData_DEV_ONLY() {
     ['e003@example.org', '張生醫部長','DEPT-BIO',  '生醫部'],
     ['e004@example.org', '陳資訊部長','DEPT-INFO', '資訊部'],
     ['e005@example.org', '林行政部長','DEPT-ADMIN','行政部'],
-    ['e006@example.org', '小明',      'GRP-REC',   '收案組'],
+    ['e006@example.org', '小明',      'GRP-CO-REC', '收案組'],
     ['e007@example.org', '小華',      'GRP-INFO',  '資訊組'],
   ];
   personnelSheet.getRange(2, 1, personnelData.length, widthFromColMap(COL.PERSONNEL)).setValues(personnelData);
@@ -189,7 +189,7 @@ function injectSampleData_DEV_ONLY() {
     ['e005@example.org', '林行政部長','DEPT-ADMIN','行政部',    '行政部長（策略長）','e002@example.org','李執行長'],
     ['e005@example.org', '林行政部長','TF-COMM',   '資安個資管理委員會','資訊安全長','e001@example.org','王代表'],
     ['e005@example.org', '林行政部長','TF-GRP-AUDIT','內部稽核執行小組','稽核小組組長','e001@example.org','王代表'],
-    ['e006@example.org', '小明',      'GRP-REC',   '收案組',    '駐站管理員',      'e003@example.org', '張生醫部長'],
+    ['e006@example.org', '小明',      'GRP-CO-REC', '收案組',    '駐站管理員',      'e003@example.org', '張生醫部長'],
     ['e007@example.org', '小華',      'GRP-INFO',  '資訊組',    '系統管理師',      'e004@example.org', '陳資訊部長'],
   ];
   assignSheet.getRange(2, 1, assignData.length, widthFromColMap(COL.ASSIGNMENT)).setValues(assignData);

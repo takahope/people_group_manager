@@ -395,7 +395,7 @@ function injectOrgTree_() {
     ['ORG', 3, 'DEPT-ADMIN',  '行政部',             '策略辦公室',   'ORG-EXEC',    'e005@example.org', '林行政部長'],
     ['ORG', 4, 'GRP-ADMIN',   '行政支援組',         '',             'DEPT-ADMIN',  'e005@example.org', '林行政部長'],
     ['ORG', 4, 'GRP-INFO',    '資訊組',             '',             'DEPT-INFO',   'e004@example.org', '陳資訊部長'],
-    ['ORG', 4, 'GRP-REC',     '收案組',             '',             'DEPT-BIO',    'e003@example.org', '張生醫部長'],
+    ['ORG', 4, 'GRP-CO-REC',  '收案組',             '',             'DEPT-BIO',    'e003@example.org', '張生醫部長'],
     // ── 任務編組（TF）───────────────────────────────────────
     ['TF',  2, 'TF-COMM',     '資安個資管理委員會', '',             '',            'e001@example.org', '王代表'],
     ['TF',  3, 'TF-GRP-SEC',  '資安執行小組',       '',             'TF-COMM',     'e004@example.org', '陳資訊部長'],
@@ -436,12 +436,12 @@ function injectAssignments_() {
     ['e005@example.org', '林行政部長', 'DEPT-ADMIN',    '行政部',               '行政部長（策略長）',     'e002@example.org', '李執行長'],
     ['e005@example.org', '林行政部長', 'TF-COMM',       '資安個資管理委員會',   '資訊安全長',             'e001@example.org', '王代表'],
     ['e005@example.org', '林行政部長', 'TF-GRP-AUDIT',  '內部稽核執行小組',     '內部稽核執行小組組長',   'e001@example.org', '王代表'],
-    ['e006@example.org', '小明',       'GRP-REC',       '收案組',               '駐站管理員',             'e003@example.org', '張生醫部長'],
+    ['e006@example.org', '小明',       'GRP-CO-REC',    '收案組',               '駐站管理員',             'e003@example.org', '張生醫部長'],
     ['e007@example.org', '小華',       'GRP-INFO',      '資訊組',               '系統管理師',             'e004@example.org', '陳資訊部長'],
     ['e008@example.org', '何人資',     'GRP-ADMIN',     '行政支援組',           'HR 專員',                'e005@example.org', '林行政部長'],
     ['e009@example.org', '周稽核',     'TF-GRP-AUDIT',  '內部稽核執行小組',     '內部稽核員',             'e005@example.org', '林行政部長'],
-    ['e010@example.org', '吳組長',     'GRP-REC',       '收案組',               '收案組組長',             'e003@example.org', '張生醫部長'],
-    ['e011@example.org', '鄭專員',     'GRP-REC',       '收案組',               '收案專員',               'e010@example.org', '吳組長'],
+    ['e010@example.org', '吳組長',     'GRP-CO-REC',    '收案組',               '收案組組長',             'e003@example.org', '張生醫部長'],
+    ['e011@example.org', '鄭專員',     'GRP-CO-REC',    '收案組',               '收案專員',               'e010@example.org', '吳組長'],
   ];
   appendToSheet_('人員職務配置', data);
   Logger.log('[inject] 人員職務配置：' + data.length + ' 筆');
@@ -621,7 +621,7 @@ function injectRoleMap_() {
     ['ROLE-ISWG-MEMBER',        '資安執行小組成員',         'GROUP',     'TF-GRP-SEC'],
     ['ROLE-PIMS-WG',            '個資管理執行小組',         'GROUP',     'TF-GRP-PIMS'],
     ['ROLE-COMM',               '資安暨個資委員會',         'GROUP',     'TF-COMM'],
-    ['ROLE-WINDOW',             '受理窗口',                 'GROUP',     'GRP-REC'],
+    ['ROLE-WINDOW',             '受理窗口',                 'GROUP',     'GRP-CO-REC'],
     ['ROLE-CO-ORGANIZER',       '協辦單位',                 'GROUP',     'TF-GRP-SEC'],
 
     // ── 外部角色（EXTERNAL 類型）────────────────────────────────────────────────────
