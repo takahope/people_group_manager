@@ -496,13 +496,19 @@ function buildAssignmentTypeMap_(assignments) {
   });
 
   groupedAssignments.forEach(personAssignments => {
-    const duplicateOrgCodeTypeMap = buildDuplicateOrgCodeTypeMap_(personAssignments);
     const primaryMode = getPrimaryAssignmentMode_(personAssignments);
     const primaryAssignments = isExplicitPrimaryKind_(primaryMode)
       ? personAssignments.filter(item => classifyAssignmentKind_(item.orgCode) === primaryMode)
       : [];
+    const primaryLeaderTypeMap = buildPrimaryLeaderTypeMap_(primaryAssignments);
+    const primaryAssignmentKeys = new Set(
+      primaryAssignments
+        .filter(item => primaryLeaderTypeMap.get(getAssignmentIdentityKey_(item)) !== '垂直兼任')
+        .map(getAssignmentIdentityKey_)
+    );
     const primaryManagerEmails = new Set(
       primaryAssignments
+        .filter(item => primaryAssignmentKeys.has(getAssignmentIdentityKey_(item)))
         .map(item => String(item.managerEmail || '').trim().toLowerCase())
         .filter(Boolean)
     );
@@ -511,10 +517,10 @@ function buildAssignmentTypeMap_(assignments) {
       const itemKey = getAssignmentIdentityKey_(item);
       const itemKind = classifyAssignmentKind_(item.orgCode);
       const managerEmail = String(item.managerEmail || '').trim().toLowerCase();
-      const duplicateType = duplicateOrgCodeTypeMap.get(itemKey);
+      const primaryLeaderType = primaryLeaderTypeMap.get(itemKey);
 
-      if (duplicateType) {
-        typeMap.set(itemKey, duplicateType);
+      if (primaryLeaderType) {
+        typeMap.set(itemKey, primaryLeaderType);
         return;
       }
 
@@ -554,11 +560,11 @@ function buildAssignmentTypeMap_(assignments) {
   return typeMap;
 }
 
-function buildDuplicateOrgCodeTypeMap_(personAssignments) {
+function buildPrimaryLeaderTypeMap_(primaryAssignments) {
   const assignmentsByOrgCode = new Map();
-  const duplicateTypeMap = new Map();
+  const leaderTypeMap = new Map();
 
-  personAssignments.forEach(item => {
+  primaryAssignments.forEach(item => {
     const orgCodeKey = String(item.orgCode || '').trim().toUpperCase();
     if (!orgCodeKey) return;
     if (!assignmentsByOrgCode.has(orgCodeKey)) assignmentsByOrgCode.set(orgCodeKey, []);
@@ -574,11 +580,11 @@ function buildDuplicateOrgCodeTypeMap_(personAssignments) {
     const primaryKey = getAssignmentIdentityKey_(leaderAssignments[0]);
     orgAssignments.forEach(item => {
       const itemKey = getAssignmentIdentityKey_(item);
-      duplicateTypeMap.set(itemKey, itemKey === primaryKey ? '主職' : '垂直兼任');
+      leaderTypeMap.set(itemKey, itemKey === primaryKey ? '主職' : '垂直兼任');
     });
   });
 
-  return duplicateTypeMap;
+  return leaderTypeMap;
 }
 
 function getPrimaryAssignmentMode_(personAssignments) {
