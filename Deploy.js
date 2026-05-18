@@ -27,7 +27,7 @@ const SHEET_SCHEMA = [
     notes:   [
       'Primary Key：全系統唯一，格式須符合 email 規範',
       '員工中文全名',
-      '限定值：在職／育嬰假／休假／留職停薪／合作單位／委外廠商／外派人員／倫理委員會',
+      '限定值：在勤／育嬰假／休假／留職停薪／合作單位／委外廠商／外派人員／倫理委員會',
     ],
     headerColor: '#1a73e8',
   },
@@ -196,7 +196,7 @@ function deployWithSampleData() {
  * 轉換為新版人員主檔（信箱 / 姓名 / 員工狀態），並把資產角色搬到 RACI角色對照表。
  *
  * 規則：
- * - 舊資料一律補上員工狀態「在職」
+ * - 舊資料一律補上員工狀態「在勤」
  * - 若角色對照表已存在相同 [角色代碼, PERSON, email]，則不重複寫入
  * - 已是新版結構的人員列不重複覆蓋
  */
@@ -238,7 +238,7 @@ function migratePersonnelStatusAndAssetRoles() {
       }
     }
 
-    return [email, name, PERSONNEL_STATUSES.has(thirdCol) ? thirdCol : '在職'];
+    return [email, name, PERSONNEL_STATUSES.has(thirdCol) ? thirdCol : '在勤'];
   });
 
   personnelSheet.clearContents();
@@ -359,18 +359,18 @@ function applyHeaderRow_(sheet, schema) {
 function injectPersonnel_() {
   const data = [
     // [信箱,              姓名,         員工狀態]
-    ['e001@example.org',        '王代表',         '在職'],
-    ['e002@example.org',        '李執行長',       '在職'],
-    ['e003@example.org',        '張生醫部長',     '在職'],
-    ['e004@example.org',        '陳資訊部長',     '在職'],
-    ['e005@example.org',        '林行政部長',     '在職'],
-    ['e006@example.org',        '小明',           '在職'],
+    ['e001@example.org',        '王代表',         '在勤'],
+    ['e002@example.org',        '李執行長',       '在勤'],
+    ['e003@example.org',        '張生醫部長',     '在勤'],
+    ['e004@example.org',        '陳資訊部長',     '在勤'],
+    ['e005@example.org',        '林行政部長',     '在勤'],
+    ['e006@example.org',        '小明',           '在勤'],
     ['e007@example.org',        '小華',           '育嬰假'],
-    ['e008@example.org',        '何人資',         '在職'],
-    ['e009@example.org',        '周稽核',         '在職'],
+    ['e008@example.org',        '何人資',         '在勤'],
+    ['e009@example.org',        '周稽核',         '在勤'],
     ['e010@example.org',        '吳組長',         '休假'],
     ['e011@example.org',        '鄭專員',         '留職停薪'],
-    ['ext.vendor@example.org',  '廠商窗口',       '在職'],
+    ['ext.vendor@example.org',  '廠商窗口',       '在勤'],
   ];
   appendToSheet_('人員主檔', data);
   Logger.log('[inject] 人員主檔：' + data.length + ' 筆');

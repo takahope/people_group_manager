@@ -8,7 +8,7 @@
 
 const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'EXTERNAL']);
 const PERSONNEL_STATUSES = new Set([
-  '在職',
+  '在勤',
   '育嬰假',
   '休假',
   '留職停薪',

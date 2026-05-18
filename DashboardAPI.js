@@ -96,7 +96,7 @@ function buildFullStats() {
   const orgGraph   = analyzeOrgGraph(orgData);
   const representativeEmails = buildRepresentativeEmailSet_();
   const activeEmails = new Set(
-    personnel.filter(p => p.status === '在職').map(p => p.email)
+    personnel.filter(p => p.status === '在勤').map(p => p.email)
   );
   const assignments = DataService.getAllAssignments()
     .filter(a => activeEmails.has(a.email));
@@ -129,7 +129,7 @@ function buildDeptStats(managerEmail) {
 
   const deptPersonnel = DataService.getSheet1Data()
     .filter(p => deptEmails.has(p.email));
-  const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在職');
+  const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在勤');
   const payrollDeptPersonnel = deptPersonnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
 
   return {
@@ -187,7 +187,7 @@ function buildPersonalStats(email) {
  * @returns {Object}
  */
 function buildPersonnelStats(personnel, assignments, representativeEmails) {
-  const activePersonnel = personnel.filter(p => p.status === '在職');
+  const activePersonnel = personnel.filter(p => p.status === '在勤');
   const actualPayrollPersonnel = personnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
 
   // 以職務配置判斷人員所屬類型
@@ -220,7 +220,7 @@ function buildPersonnelStats(personnel, assignments, representativeEmails) {
 
 function buildStatusBreakdown_(personnel) {
   const breakdown = {
-    在職: 0,
+    在勤: 0,
     育嬰假: 0,
     休假: 0,
     留職停薪: 0,

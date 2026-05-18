@@ -454,7 +454,7 @@ const Pages = {
               compact: true,
             },
             {
-              label: '實際資薪人員',
+              label: '在職',
               value: payrollTotal > 0 ? '是' : '否',
               tone: payrollTotal > 0 ? 'success' : 'neutral',
               meta: '依既有排除口徑判定',
@@ -476,13 +476,13 @@ const Pages = {
           ]
         : [
             {
-              label: '在職總人數',
+              label: '在勤總人數',
               value: String(total),
               tone: 'success',
               meta: `全人員 ${stats.personnel?.totalAll ?? total} 位`,
             },
             {
-              label: '實際資薪人員',
+              label: '在職',
               value: String(payrollTotal),
               tone: 'primary',
               meta: '排除倫理委員會、合作單位、委外廠商',
@@ -550,7 +550,7 @@ const Pages = {
               value: Components.escapeHtml(scopeLabelMap[stats.scope] || stats.scope || '—'),
               tone: 'neutral',
               meta: stats.scope === 'dept'
-                ? `在職 ${stats.personnel?.total ?? 0} / 資薪 ${stats.personnel?.actualPayrollTotal ?? 0}`
+                ? `在勤 ${stats.personnel?.total ?? 0} / 在職 ${stats.personnel?.actualPayrollTotal ?? 0}`
                 : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 外派 ${statusBreakdown['外派人員'] || 0}`,
               compact: true,
             },
@@ -636,7 +636,7 @@ const Pages = {
     const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
     const statusOptions = [
       { key: '全部', label: '全部', type: 'all' },
-      { key: '在職', label: '在職', type: 'status' },
+      { key: '在勤', label: '在勤', type: 'status' },
       { key: '育嬰假', label: '育嬰假', type: 'status' },
       { key: '休假', label: '休假', type: 'status' },
       { key: '留職停薪', label: '留職停薪', type: 'status' },
@@ -644,7 +644,7 @@ const Pages = {
       { key: '委外廠商', label: '委外廠商', type: 'status' },
       { key: '外派人員', label: '外派人員', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
-      { key: '實際資薪人員', label: '實際資薪人員', type: 'derived' },
+      { key: '在職', label: '在職', type: 'derived' },
     ];
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
@@ -737,7 +737,7 @@ const Pages = {
         statusOptions,
         statusBadgeClass(status) {
           return ({
-            '在職': 'badge--success',
+            '在勤': 'badge--success',
             '育嬰假': 'badge--warning',
             '休假': 'badge--neutral',
             '留職停薪': 'badge--danger',
@@ -753,7 +753,7 @@ const Pages = {
         },
         matchesActiveStatus(person) {
           if (this.activeStatus === '全部') return true;
-          if (this.activeStatus === '實際資薪人員') {
+          if (this.activeStatus === '在職') {
             return !excludedPayrollStatuses.has(String(person?.status || '').trim())
               && !person?.isRepresentative;
           }
@@ -761,7 +761,7 @@ const Pages = {
         },
         getStatusCount(statusKey) {
           if (statusKey === '全部') return this.data.length;
-          if (statusKey === '實際資薪人員') {
+          if (statusKey === '在職') {
             return this.data.filter(item =>
               !excludedPayrollStatuses.has(String(item?.status || '').trim())
               && !item?.isRepresentative
@@ -888,8 +888,8 @@ const Pages = {
       <div class="form-group">
         <label class="form-label required">員工狀態</label>
         <select class="form-control" id="pStatus">
-          ${['在職', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'].map(status => `
-            <option value="${status}" ${person.status === status || (!person.status && status === '在職') ? 'selected' : ''}>${status}</option>
+          ${['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'].map(status => `
+            <option value="${status}" ${person.status === status || (!person.status && status === '在勤') ? 'selected' : ''}>${status}</option>
           `).join('')}
         </select>
       </div>`;
@@ -979,7 +979,7 @@ const Pages = {
     let formDraft = {
       email: existingPerson?.email || '',
       name: existingPerson?.name || '',
-      status: existingPerson?.status || '在職',
+      status: existingPerson?.status || '在勤',
     };
 
     Components.showModal(isEdit ? '編輯人員' : '新增人員', Pages._renderPersonFormBody(formDraft, isEdit), async () => {

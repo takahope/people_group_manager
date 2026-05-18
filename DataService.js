@@ -63,7 +63,7 @@ function rowToPersonnel(row) {
 }
 
 function normalizePersonnelStatus(rawStatus) {
-  return PERSONNEL_STATUSES.has(rawStatus) ? rawStatus : '在職';
+  return PERSONNEL_STATUSES.has(rawStatus) ? rawStatus : '在勤';
 }
 
 // =============================================
