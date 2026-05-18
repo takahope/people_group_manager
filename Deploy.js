@@ -27,7 +27,7 @@ const SHEET_SCHEMA = [
     notes:   [
       'Primary Key：全系統唯一，格式須符合 email 規範',
       '員工中文全名',
-      '限定值：在職／育嬰／休假／留職停薪',
+      '限定值：在職／育嬰假／休假／留職停薪／合作單位／委外廠商／外派人員／倫理委員會',
     ],
     headerColor: '#1a73e8',
   },
@@ -365,7 +365,7 @@ function injectPersonnel_() {
     ['e004@example.org',        '陳資訊部長',     '在職'],
     ['e005@example.org',        '林行政部長',     '在職'],
     ['e006@example.org',        '小明',           '在職'],
-    ['e007@example.org',        '小華',           '育嬰'],
+    ['e007@example.org',        '小華',           '育嬰假'],
     ['e008@example.org',        '何人資',         '在職'],
     ['e009@example.org',        '周稽核',         '在職'],
     ['e010@example.org',        '吳組長',         '休假'],

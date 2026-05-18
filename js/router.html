@@ -490,7 +490,7 @@ const Pages = {
   async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
-    const statusOptions = ['全部', '在職', '育嬰', '休假', '留職停薪'];
+    const statusOptions = ['全部', '在職', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'];
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
       byEmail: new Map(),
@@ -573,9 +573,13 @@ const Pages = {
         statusBadgeClass(status) {
           return ({
             '在職': 'badge--success',
-            '育嬰': 'badge--warning',
+            '育嬰假': 'badge--warning',
             '休假': 'badge--neutral',
             '留職停薪': 'badge--danger',
+            '合作單位': 'badge--primary',
+            '委外廠商': 'badge--neutral',
+            '外派人員': 'badge--success',
+            '倫理委員會': 'badge--warning',
           }[status] || 'badge--neutral');
         },
         findByEmail(email) {
@@ -695,7 +699,7 @@ const Pages = {
       <div class="form-group">
         <label class="form-label required">員工狀態</label>
         <select class="form-control" id="pStatus">
-          ${['在職', '育嬰', '休假', '留職停薪'].map(status => `
+          ${['在職', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'].map(status => `
             <option value="${status}" ${person.status === status || (!person.status && status === '在職') ? 'selected' : ''}>${status}</option>
           `).join('')}
         </select>
