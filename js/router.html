@@ -490,7 +490,19 @@ const Pages = {
   async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
-    const statusOptions = ['全部', '在職', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'];
+    const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
+    const statusOptions = [
+      { key: '全部', label: '全部', type: 'all' },
+      { key: '在職', label: '在職', type: 'status' },
+      { key: '育嬰假', label: '育嬰假', type: 'status' },
+      { key: '休假', label: '休假', type: 'status' },
+      { key: '留職停薪', label: '留職停薪', type: 'status' },
+      { key: '合作單位', label: '合作單位', type: 'status' },
+      { key: '委外廠商', label: '委外廠商', type: 'status' },
+      { key: '外派人員', label: '外派人員', type: 'status' },
+      { key: '倫理委員會', label: '倫理委員會', type: 'status' },
+      { key: '實際資薪人員', label: '實際資薪人員', type: 'derived' },
+    ];
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
       byEmail: new Map(),
@@ -511,7 +523,7 @@ const Pages = {
         </div>
       </div>
       <div id="personnelStatusFilters" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-        ${statusOptions.map(status => `<button class="btn btn--ghost btn--sm" data-status="${status}">${status}</button>`).join('')}
+        ${statusOptions.map(option => `<button class="btn btn--ghost btn--sm" data-status="${option.key}">${option.label}</button>`).join('')}
       </div>
       <div id="personnelTable">
         <div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>
@@ -570,6 +582,7 @@ const Pages = {
         filtered: [],
         activeStatus: '全部',
         searchQuery: '',
+        statusOptions,
         statusBadgeClass(status) {
           return ({
             '在職': 'badge--success',
@@ -586,11 +599,25 @@ const Pages = {
           const normalized = String(email || '').trim().toLowerCase();
           return this.data.find(item => String(item.email || '').trim().toLowerCase() === normalized) || null;
         },
+        matchesActiveStatus(person) {
+          if (this.activeStatus === '全部') return true;
+          if (this.activeStatus === '實際資薪人員') {
+            return !excludedPayrollStatuses.has(String(person?.status || '').trim());
+          }
+          return String(person?.status || '').trim() === this.activeStatus;
+        },
+        getStatusCount(statusKey) {
+          if (statusKey === '全部') return this.data.length;
+          if (statusKey === '實際資薪人員') {
+            return this.data.filter(item => !excludedPayrollStatuses.has(String(item?.status || '').trim())).length;
+          }
+          return this.data.filter(item => String(item?.status || '').trim() === statusKey).length;
+        },
         applyFilters(searchQuery = this.searchQuery) {
           this.searchQuery = String(searchQuery || '');
           const q = this.searchQuery.toLowerCase();
           this.filtered = this.data.filter(p => {
-            const matchesStatus = this.activeStatus === '全部' || p.status === this.activeStatus;
+            const matchesStatus = this.matchesActiveStatus(p);
             const matchesSearch = !q ||
               String(p.name || '').toLowerCase().includes(q) ||
               String(p.email || '').toLowerCase().includes(q) ||
@@ -628,7 +655,21 @@ const Pages = {
         refreshView() {
           if (!this.pageCtx?.isActive()) return;
           this.applyFilters(this.searchQuery);
+          this.updateFilterButtons();
           this.renderTable();
+        },
+        updateFilterButtons() {
+          const filterBar = this.pageCtx?.query('#personnelStatusFilters');
+          if (!filterBar) return;
+          filterBar.querySelectorAll('[data-status]').forEach(btn => {
+            const statusKey = btn.dataset.status;
+            const selected = statusKey === this.activeStatus;
+            const option = this.statusOptions.find(item => item.key === statusKey);
+            const label = option ? option.label : statusKey;
+            const count = this.getStatusCount(statusKey);
+            btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
+            btn.textContent = `${label}（${count}）`;
+          });
         },
       };
       Pages._personnelState.refreshView();
@@ -645,25 +686,17 @@ const Pages = {
 
       const filterBar = pageCtx.query('#personnelStatusFilters');
       if (filterBar) {
-        const updateFilterButtons = () => {
-          const state = Pages._personnelState;
-          if (!state || state.navId !== pageCtx.navId) return;
-          filterBar.querySelectorAll('[data-status]').forEach(btn => {
-            const selected = btn.dataset.status === state.activeStatus;
-            btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
-          });
-        };
         filterBar.querySelectorAll('[data-status]').forEach(btn => {
           btn.onclick = () => {
             const state = Pages._personnelState;
             if (!state || state.navId !== pageCtx.navId) return;
             state.activeStatus = btn.dataset.status;
             state.applyFilters(searchInput.value);
-            updateFilterButtons();
+            state.updateFilterButtons();
             state.renderTable();
           };
         });
-        updateFilterButtons();
+        Pages._personnelState.updateFilterButtons();
       }
 
       if (canWrite) {
