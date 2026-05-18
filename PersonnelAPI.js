@@ -173,10 +173,15 @@ function deleteAssignment(rowIndex) {
 function getAllPersonnel() {
   try {
     const email = Session.getActiveUser().getEmail();
+    const representativeEmails = buildRepresentativeEmailSet_();
+    const decoratePersonnelList = items => (items || []).map(person => ({
+      ...person,
+      isRepresentative: representativeEmails.has(String(person?.email || '').trim().toLowerCase()),
+    }));
 
     // ADMIN / HR / AUDITOR：取全部
     if (checkPermission('personnel.read.all')) {
-      return successResponse(DataService.getSheet1Data());
+      return successResponse(decoratePersonnelList(DataService.getSheet1Data()));
     }
 
     // 主管：取轄下成員
@@ -185,13 +190,13 @@ function getAllPersonnel() {
         .filter(a => a.managerEmail === email)
         .map(a => a.email);
       const all = DataService.getSheet1Data();
-      return successResponse(all.filter(p => directReports.includes(p.email)));
+      return successResponse(decoratePersonnelList(all.filter(p => directReports.includes(p.email))));
     }
 
     // 一般員工：只取本人
     if (checkPermission('personnel.read.self')) {
       const self = DataService.findPersonByEmail(email);
-      return successResponse(self ? [self] : []);
+      return successResponse(decoratePersonnelList(self ? [self] : []));
     }
 
     return errorResponse('無查詢人員的權限');
@@ -199,6 +204,16 @@ function getAllPersonnel() {
     Logger.log('getAllPersonnel 錯誤：' + (error.stack || error.message));
     return errorResponse(error.message);
   }
+}
+
+function buildRepresentativeEmailSet_() {
+  const representativeEmails = new Set();
+  DataService.getAllAssignments().forEach(item => {
+    if (String(item?.title || '').trim() !== '代表人') return;
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (email) representativeEmails.add(email);
+  });
+  return representativeEmails;
 }
 
 /**

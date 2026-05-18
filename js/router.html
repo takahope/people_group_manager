@@ -754,14 +754,18 @@ const Pages = {
         matchesActiveStatus(person) {
           if (this.activeStatus === '全部') return true;
           if (this.activeStatus === '實際資薪人員') {
-            return !excludedPayrollStatuses.has(String(person?.status || '').trim());
+            return !excludedPayrollStatuses.has(String(person?.status || '').trim())
+              && !person?.isRepresentative;
           }
           return String(person?.status || '').trim() === this.activeStatus;
         },
         getStatusCount(statusKey) {
           if (statusKey === '全部') return this.data.length;
           if (statusKey === '實際資薪人員') {
-            return this.data.filter(item => !excludedPayrollStatuses.has(String(item?.status || '').trim())).length;
+            return this.data.filter(item =>
+              !excludedPayrollStatuses.has(String(item?.status || '').trim())
+              && !item?.isRepresentative
+            ).length;
           }
           return this.data.filter(item => String(item?.status || '').trim() === statusKey).length;
         },

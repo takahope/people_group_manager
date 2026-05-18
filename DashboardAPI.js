@@ -94,6 +94,7 @@ function buildFullStats() {
   const personnel  = DataService.getSheet1Data();
   const orgData    = DataService.getSheet2Data(null);
   const orgGraph   = analyzeOrgGraph(orgData);
+  const representativeEmails = buildRepresentativeEmailSet_();
   const activeEmails = new Set(
     personnel.filter(p => p.status === '在職').map(p => p.email)
   );
@@ -104,7 +105,7 @@ function buildFullStats() {
   return {
     scope: 'full',
     warnings: orgGraph.warnings,
-    personnel: buildPersonnelStats(personnel, assignments),
+    personnel: buildPersonnelStats(personnel, assignments, representativeEmails),
     orgDistribution: buildOrgDistribution(orgData, assignments, orgGraph.descendantsByCode),
     concurrentPersonnel: buildConcurrentList(assignments),
     raciCoverage: buildRaciCoverage(raciData),
@@ -121,6 +122,7 @@ function buildFullStats() {
  */
 function buildDeptStats(managerEmail) {
   const all = DataService.getAllAssignments();
+  const representativeEmails = buildRepresentativeEmailSet_(all);
   const deptEmails = new Set(
     all.filter(a => a.managerEmail === managerEmail).map(a => a.email)
   );
@@ -128,7 +130,7 @@ function buildDeptStats(managerEmail) {
   const deptPersonnel = DataService.getSheet1Data()
     .filter(p => deptEmails.has(p.email));
   const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在職');
-  const payrollDeptPersonnel = deptPersonnel.filter(isActualPayrollPersonnel_);
+  const payrollDeptPersonnel = deptPersonnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
 
   return {
     scope: 'dept',
@@ -157,7 +159,8 @@ function buildDeptStats(managerEmail) {
 function buildPersonalStats(email) {
   const person = DataService.findPersonByEmail(email);
   const assignments = DataService.getSheet3DataByEmail(email);
-  const actualPayroll = person && isActualPayrollPersonnel_(person) ? 1 : 0;
+  const representativeEmails = buildRepresentativeEmailSet_();
+  const actualPayroll = person && isActualPayrollPersonnel_(person, representativeEmails) ? 1 : 0;
 
   return {
     scope: 'personal',
@@ -183,9 +186,9 @@ function buildPersonalStats(email) {
  * @param {Array} assignments
  * @returns {Object}
  */
-function buildPersonnelStats(personnel, assignments) {
+function buildPersonnelStats(personnel, assignments, representativeEmails) {
   const activePersonnel = personnel.filter(p => p.status === '在職');
-  const actualPayrollPersonnel = personnel.filter(isActualPayrollPersonnel_);
+  const actualPayrollPersonnel = personnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
 
   // 以職務配置判斷人員所屬類型
   const orgCodes = new Set(DataService.getSheet2Data('ORG').map(o => o.code));
@@ -236,9 +239,22 @@ function buildStatusBreakdown_(personnel) {
   return breakdown;
 }
 
-function isActualPayrollPersonnel_(person) {
+function isActualPayrollPersonnel_(person, representativeEmails) {
   const excludedStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
-  return !!person && !excludedStatuses.has(String(person.status || '').trim());
+  if (!person) return false;
+  const normalizedEmail = String(person.email || '').trim().toLowerCase();
+  return !excludedStatuses.has(String(person.status || '').trim())
+    && !(representativeEmails && representativeEmails.has(normalizedEmail));
+}
+
+function buildRepresentativeEmailSet_(assignments) {
+  const representativeEmails = new Set();
+  (assignments || DataService.getAllAssignments()).forEach(item => {
+    if (String(item?.title || '').trim() !== '代表人') return;
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (email) representativeEmails.add(email);
+  });
+  return representativeEmails;
 }
 
 /**
