@@ -559,80 +559,104 @@ const Pages = {
       const personnelPromise = API.getAllPersonnel();
       startAssignmentPrefetch();
 
-      let data = await personnelPromise;
+      const data = await personnelPromise;
       if (!pageCtx.isActive()) return;
-      let filtered = data;
-      let activeStatus = '全部';
-
-      const statusBadgeClass = (status) => ({
-        '在職': 'badge--success',
-        '育嬰': 'badge--warning',
-        '休假': 'badge--neutral',
-        '留職停薪': 'badge--danger',
-      }[status] || 'badge--neutral');
-
-      const applyFilters = (searchQuery = '') => {
-        const q = searchQuery.toLowerCase();
-        filtered = data.filter(p => {
-          const matchesStatus = activeStatus === '全部' || p.status === activeStatus;
-          const matchesSearch = !q ||
-            p.name.toLowerCase().includes(q) ||
-            p.email.toLowerCase().includes(q) ||
-            (p.status || '').toLowerCase().includes(q);
-          return matchesStatus && matchesSearch;
-        });
+      Pages._personnelState = {
+        navId: pageCtx.navId,
+        pageCtx,
+        canWrite,
+        canDelete,
+        data: Array.isArray(data) ? data.slice() : [],
+        filtered: [],
+        activeStatus: '全部',
+        searchQuery: '',
+        statusBadgeClass(status) {
+          return ({
+            '在職': 'badge--success',
+            '育嬰': 'badge--warning',
+            '休假': 'badge--neutral',
+            '留職停薪': 'badge--danger',
+          }[status] || 'badge--neutral');
+        },
+        findByEmail(email) {
+          const normalized = String(email || '').trim().toLowerCase();
+          return this.data.find(item => String(item.email || '').trim().toLowerCase() === normalized) || null;
+        },
+        applyFilters(searchQuery = this.searchQuery) {
+          this.searchQuery = String(searchQuery || '');
+          const q = this.searchQuery.toLowerCase();
+          this.filtered = this.data.filter(p => {
+            const matchesStatus = this.activeStatus === '全部' || p.status === this.activeStatus;
+            const matchesSearch = !q ||
+              String(p.name || '').toLowerCase().includes(q) ||
+              String(p.email || '').toLowerCase().includes(q) ||
+              String(p.status || '').toLowerCase().includes(q);
+            return matchesStatus && matchesSearch;
+          });
+          return this.filtered;
+        },
+        renderTable() {
+          Components.DataTable({
+            columns: [
+              { key: 'email', label: '信箱' },
+              { key: 'name',  label: '姓名' },
+              {
+                key: 'status',
+                label: '員工狀態',
+                render: (value) => `<span class="badge ${this.statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
+              },
+              {
+                key: 'assignmentView',
+                label: '查看職務',
+                sortable: false,
+                render: (_, row) => `
+                  <button class="btn btn--ghost btn--sm" onclick="Pages._showPersonnelAssignments('${row.email}')">查看職務</button>
+                `,
+              },
+            ],
+            actions: this.canWrite ? (row) => `
+              <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
+              ${this.canDelete ? `<button class="btn btn--danger btn--sm" style="margin-left:.25rem" onclick="Pages._deletePerson('${row.email}','${row.name}')">刪除</button>` : ''}
+            ` : null,
+            onRowClick: null,
+          }, this.filtered, 'personnelTable');
+        },
+        refreshView() {
+          if (!this.pageCtx?.isActive()) return;
+          this.applyFilters(this.searchQuery);
+          this.renderTable();
+        },
       };
-
-      const renderTable = () => {
-        Components.DataTable({
-          columns: [
-            { key: 'email', label: '信箱' },
-            { key: 'name',  label: '姓名' },
-            {
-              key: 'status',
-              label: '員工狀態',
-              render: (value) => `<span class="badge ${statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
-            },
-            {
-              key: 'assignmentView',
-              label: '查看職務',
-              sortable: false,
-              render: (_, row) => `
-                <button class="btn btn--ghost btn--sm" onclick="Pages._showPersonnelAssignments('${row.email}')">查看職務</button>
-              `,
-            },
-          ],
-          actions: canWrite ? (row) => `
-            <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
-            ${canDelete ? `<button class="btn btn--danger btn--sm" style="margin-left:.25rem" onclick="Pages._deletePerson('${row.email}','${row.name}')">刪除</button>` : ''}
-          ` : null,
-          onRowClick: null,
-        }, filtered, 'personnelTable');
-      };
-      renderTable();
+      Pages._personnelState.refreshView();
 
       // 即時搜尋
       const searchInput = pageCtx.query('#personnelSearch');
       if (!searchInput) return;
       searchInput.addEventListener('input', e => {
-        applyFilters(e.target.value);
-        renderTable();
+        const state = Pages._personnelState;
+        if (!state || state.navId !== pageCtx.navId) return;
+        state.applyFilters(e.target.value);
+        state.renderTable();
       });
 
       const filterBar = pageCtx.query('#personnelStatusFilters');
       if (filterBar) {
         const updateFilterButtons = () => {
+          const state = Pages._personnelState;
+          if (!state || state.navId !== pageCtx.navId) return;
           filterBar.querySelectorAll('[data-status]').forEach(btn => {
-            const selected = btn.dataset.status === activeStatus;
+            const selected = btn.dataset.status === state.activeStatus;
             btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
           });
         };
         filterBar.querySelectorAll('[data-status]').forEach(btn => {
           btn.onclick = () => {
-            activeStatus = btn.dataset.status;
-            applyFilters(searchInput.value);
+            const state = Pages._personnelState;
+            if (!state || state.navId !== pageCtx.navId) return;
+            state.activeStatus = btn.dataset.status;
+            state.applyFilters(searchInput.value);
             updateFilterButtons();
-            renderTable();
+            state.renderTable();
           };
         });
         updateFilterButtons();
@@ -641,7 +665,7 @@ const Pages = {
       if (canWrite) {
         const addBtn = pageCtx.query('#addPersonBtn');
         if (addBtn) {
-          addBtn.onclick = () => Pages._showPersonForm(null, () => Router.navigateTo(pageCtx.hash));
+          addBtn.onclick = () => Pages._showPersonForm(null);
         }
       }
     } catch (err) {
@@ -658,49 +682,203 @@ const Pages = {
     }
   },
 
-  // 人員表單（新增/編輯）
-  _showPersonForm(existingPerson, onSuccess) {
-    const isEdit = !!existingPerson;
-    const body = `
+  _renderPersonFormBody(person = {}, isEdit = false) {
+    return `
       <div class="form-group">
         <label class="form-label required">信箱</label>
-        <input type="email" class="form-control" id="pEmail" value="${existingPerson?.email || ''}" ${isEdit ? 'readonly' : ''}>
+        <input type="email" class="form-control" id="pEmail" value="${Components.escapeHtml(person.email || '')}" ${isEdit ? 'readonly' : ''}>
       </div>
       <div class="form-group">
         <label class="form-label required">姓名</label>
-        <input type="text" class="form-control" id="pName" value="${existingPerson?.name || ''}" maxlength="50">
+        <input type="text" class="form-control" id="pName" value="${Components.escapeHtml(person.name || '')}" maxlength="50">
       </div>
       <div class="form-group">
         <label class="form-label required">員工狀態</label>
         <select class="form-control" id="pStatus">
           ${['在職', '育嬰', '休假', '留職停薪'].map(status => `
-            <option value="${status}" ${existingPerson?.status === status || (!existingPerson && status === '在職') ? 'selected' : ''}>${status}</option>
+            <option value="${status}" ${person.status === status || (!person.status && status === '在職') ? 'selected' : ''}>${status}</option>
           `).join('')}
         </select>
       </div>`;
+  },
 
-    Components.showModal(isEdit ? '編輯人員' : '新增人員', body, async () => {
-      const obj = {
+  _createProgressController(options = {}) {
+    const bodyEl = document.getElementById('modalBody');
+    const confirmBtn = document.getElementById('modalConfirmBtn');
+    const cancelBtn = document.getElementById('modalCancelBtn');
+    const closeBtn = document.getElementById('modalClose');
+    const originalConfirmDisplay = confirmBtn ? confirmBtn.style.display : '';
+    const originalCancelText = cancelBtn ? cancelBtn.textContent : '取消';
+    let progress = 0;
+    let intervalId = null;
+    const message = options.message || '處理中...';
+    const hint = options.hint || '請稍候';
+
+    const render = () => {
+      if (!bodyEl) return;
+      bodyEl.innerHTML = Components.renderModalProgress({
+        message,
+        percent: progress,
+        percentText: `${Math.round(progress)}%`,
+        hint,
+      });
+    };
+
+    return {
+      start() {
+        render();
+        if (confirmBtn) confirmBtn.style.display = 'none';
+        if (cancelBtn) cancelBtn.textContent = '處理中';
+        progress = 0;
+        intervalId = setInterval(() => {
+          progress = Math.min(progress + 10, 90);
+          render();
+        }, 300);
+      },
+      async complete() {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = null;
+        progress = 100;
+        render();
+        await new Promise(resolve => setTimeout(resolve, 180));
+      },
+      stop() {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = null;
+        if (confirmBtn) confirmBtn.style.display = originalConfirmDisplay;
+        if (cancelBtn) cancelBtn.textContent = originalCancelText;
+        if (closeBtn) closeBtn.disabled = false;
+      },
+    };
+  },
+
+  _upsertPersonnelState(person, mode = 'update') {
+    const state = Pages._personnelState;
+    if (!state || !person) return;
+    const normalizedEmail = String(person.email || '').trim().toLowerCase();
+    const existingIndex = state.data.findIndex(item => String(item.email || '').trim().toLowerCase() === normalizedEmail);
+    if (existingIndex >= 0) {
+      state.data.splice(existingIndex, 1, { ...state.data[existingIndex], ...person });
+    } else if (mode === 'add') {
+      state.data.unshift({ ...person });
+    }
+    state.refreshView();
+  },
+
+  _syncPersonnelAssignmentCache(person) {
+    const prefetchState = Pages._personnelAssignmentPrefetchState;
+    if (!prefetchState || !person || !prefetchState.byEmail) return;
+    const normalizedEmail = String(person.email || '').trim().toLowerCase();
+    const cachedPayload = prefetchState.byEmail.get(normalizedEmail);
+    if (!cachedPayload || !cachedPayload.person) return;
+    cachedPayload.person = {
+      ...cachedPayload.person,
+      email: person.email,
+      name: person.name,
+      status: person.status,
+    };
+    prefetchState.byEmail.set(normalizedEmail, cachedPayload);
+  },
+
+  // 人員表單（新增/編輯）
+  _showPersonForm(existingPerson) {
+    const isEdit = !!existingPerson;
+    let formDraft = {
+      email: existingPerson?.email || '',
+      name: existingPerson?.name || '',
+      status: existingPerson?.status || '在職',
+    };
+
+    Components.showModal(isEdit ? '編輯人員' : '新增人員', Pages._renderPersonFormBody(formDraft, isEdit), async () => {
+      formDraft = {
         email:  document.getElementById('pEmail').value.trim(),
         name:   document.getElementById('pName').value.trim(),
         status: document.getElementById('pStatus').value,
       };
+      const progress = Pages._createProgressController({
+        message: isEdit ? '儲存人員資料中...' : '新增人員資料中...',
+        hint: '系統正在同步資料',
+      });
       try {
-        if (isEdit) { await API.updatePerson(existingPerson.email, obj); }
-        else        { await API.addPerson(obj); }
+        progress.start();
+        if (isEdit) { await API.updatePerson(existingPerson.email, formDraft); }
+        else        { await API.addPerson(formDraft); }
+        await progress.complete();
+        Pages._upsertPersonnelState(formDraft, isEdit ? 'update' : 'add');
+        Pages._syncPersonnelAssignmentCache(formDraft);
         Components.showToast(isEdit ? '人員更新成功' : '人員新增成功', 'success');
-        onSuccess();
-      } catch (err) { API.handleError(err); }
-    }, isEdit ? '儲存' : '新增');
+        return true;
+      } catch (err) {
+        progress.stop();
+        API.handleError(err);
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) {
+          bodyEl.innerHTML = Pages._renderPersonFormBody(formDraft, isEdit);
+        }
+        return false;
+      }
+    }, isEdit ? '儲存' : '新增', {
+      closeBeforeConfirm: false,
+    });
   },
 
-  _editPerson(email) {
+  async _editPerson(email) {
     const pageCtx = Router.getActivePageContext();
-    API.getAllPersonnel().then(data => {
-      if (!pageCtx || !pageCtx.isActive()) return;
-      const person = data.find(p => p.email === email);
-      if (person) Pages._showPersonForm(person, () => location.reload());
+    const state = Pages._personnelState;
+    const backdrop = document.getElementById('modalBackdrop');
+    if (!pageCtx || !pageCtx.isActive()) return;
+    const person = state && state.navId === pageCtx.navId ? state.findByEmail(email) : null;
+    if (person) {
+      Pages._showPersonForm(person);
+      return;
+    }
+
+    Components.showModal(
+      '編輯人員',
+      Components.renderModalProgress({
+        message: '載入人員資料中...',
+        percent: 0,
+        percentText: '0%',
+        hint: '準備開啟編輯視窗',
+      }),
+      () => true,
+      '關閉',
+      {
+        hideConfirm: true,
+        cancelText: '關閉',
+      }
+    );
+
+    const progress = Pages._createProgressController({
+      message: '載入人員資料中...',
+      hint: '正在同步最新資料',
     });
+    progress.start();
+
+    try {
+      const data = await API.getAllPersonnel();
+      if (!pageCtx.isActive()) return;
+      const latestPerson = (data || []).find(item => String(item.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+      await progress.complete();
+      if (backdrop?.hidden) return;
+      progress.stop();
+      if (!latestPerson) {
+        Components.showToast('找不到指定人員資料', 'warning');
+        Components.hideModal();
+        return;
+      }
+      Pages._showPersonForm(latestPerson);
+    } catch (err) {
+      progress.stop();
+      API.handleError(err);
+      const bodyEl = document.getElementById('modalBody');
+      if (!bodyEl) return;
+      bodyEl.innerHTML = `
+        <div class="empty-state" style="margin:0">
+          <p>無法取得人員資料</p>
+          <p style="font-size:.85rem;color:var(--color-text-sub)">${Components.escapeHtml(err.message)}</p>
+        </div>`;
+    }
   },
 
   _deletePerson(email, name) {

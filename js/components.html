@@ -130,6 +130,26 @@ const Components = (() => {
     if (backdrop) backdrop.hidden = true;
   }
 
+  function renderModalProgress(options = {}) {
+    const message = options.message || '處理中...';
+    const percent = Math.max(0, Math.min(Number(options.percent) || 0, 100));
+    const hint = options.hint || '';
+    const percentText = options.percentText || `${Math.round(percent)}%`;
+
+    return `
+      <div class="modal-progress">
+        <div class="modal-progress__spinner"><div class="spinner"></div></div>
+        <div class="modal-progress__message">${escapeHtml(message)}</div>
+        <div class="progress-bar modal-progress__bar">
+          <div class="progress-bar__fill" style="width:${percent}%"></div>
+        </div>
+        <div class="modal-progress__meta">
+          <span>${escapeHtml(percentText)}</span>
+          ${hint ? `<span>${escapeHtml(hint)}</span>` : ''}
+        </div>
+      </div>`;
+  }
+
   // =============================================
   // Spinner
   // =============================================
@@ -734,6 +754,7 @@ const Components = (() => {
     showSpinner,
     hideSpinner,
     renderLoadError,
+    renderModalProgress,
     DataTable,
     OrgNode,
     renderOrgMemberListModal,
