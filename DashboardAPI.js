@@ -128,6 +128,7 @@ function buildDeptStats(managerEmail) {
   const deptPersonnel = DataService.getSheet1Data()
     .filter(p => deptEmails.has(p.email));
   const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在職');
+  const payrollDeptPersonnel = deptPersonnel.filter(isActualPayrollPersonnel_);
 
   return {
     scope: 'dept',
@@ -136,6 +137,8 @@ function buildDeptStats(managerEmail) {
       total: activeDeptPersonnel.length,
       totalAll: deptPersonnel.length,
       activeTotal: activeDeptPersonnel.length,
+      actualPayrollTotal: payrollDeptPersonnel.length,
+      statusBreakdown: buildStatusBreakdown_(deptPersonnel),
       details: deptPersonnel,
     },
     concurrentPersonnel: buildConcurrentList(
@@ -154,12 +157,16 @@ function buildDeptStats(managerEmail) {
 function buildPersonalStats(email) {
   const person = DataService.findPersonByEmail(email);
   const assignments = DataService.getSheet3DataByEmail(email);
+  const actualPayroll = person && isActualPayrollPersonnel_(person) ? 1 : 0;
 
   return {
     scope: 'personal',
     warnings: [],
     person,
     assignments,
+    actualPayroll,
+    assignmentCount: assignments.length,
+    status: person ? person.status : '',
     concurrentCount: assignments.length > 1 ? assignments.length : 0,
   };
 }
@@ -178,6 +185,7 @@ function buildPersonalStats(email) {
  */
 function buildPersonnelStats(personnel, assignments) {
   const activePersonnel = personnel.filter(p => p.status === '在職');
+  const actualPayrollPersonnel = personnel.filter(isActualPayrollPersonnel_);
 
   // 以職務配置判斷人員所屬類型
   const orgCodes = new Set(DataService.getSheet2Data('ORG').map(o => o.code));
@@ -195,27 +203,42 @@ function buildPersonnelStats(personnel, assignments) {
     else                               inExternal.add(a.email);
   });
 
-  const statusBreakdown = {
-    在職: 0,
-    育嬰: 0,
-    休假: 0,
-    留職停薪: 0,
-  };
-  personnel.forEach(person => {
-    if (Object.prototype.hasOwnProperty.call(statusBreakdown, person.status)) {
-      statusBreakdown[person.status] += 1;
-    }
-  });
-
   return {
     total:    activePersonnel.length,
     totalAll: personnel.length,
     activeTotal: activePersonnel.length,
-    statusBreakdown,
+    actualPayrollTotal: actualPayrollPersonnel.length,
+    statusBreakdown: buildStatusBreakdown_(personnel),
     orgCount: inOrg.size,
     tfCount:  inTF.size,
     extCount: inExternal.size,
   };
+}
+
+function buildStatusBreakdown_(personnel) {
+  const breakdown = {
+    在職: 0,
+    育嬰假: 0,
+    休假: 0,
+    留職停薪: 0,
+    合作單位: 0,
+    委外廠商: 0,
+    外派人員: 0,
+    倫理委員會: 0,
+  };
+
+  (personnel || []).forEach(person => {
+    if (Object.prototype.hasOwnProperty.call(breakdown, person.status)) {
+      breakdown[person.status] += 1;
+    }
+  });
+
+  return breakdown;
+}
+
+function isActualPayrollPersonnel_(person) {
+  const excludedStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
+  return !!person && !excludedStatuses.has(String(person.status || '').trim());
 }
 
 /**

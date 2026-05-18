@@ -381,15 +381,28 @@ const Pages = {
   // ========================
   async loadDashboard(container, user, pageCtx) {
     container.innerHTML = `
-      <div class="page-header">
-        <h1>📊 儀表板</h1>
-      </div>
+      <section class="dashboard-hero">
+        <div class="dashboard-hero__intro">
+          <span class="dashboard-hero__eyebrow">Insight Overview</span>
+          <div class="dashboard-hero__headline">
+            <h1>📊 儀表板</h1>
+            <p>掌握人員輪廓、實際資薪規模、稽核風險與近期異動，快速判讀目前管理狀態。</p>
+          </div>
+        </div>
+        <div class="dashboard-hero__meta">
+          <div class="dashboard-hero__meta-label">目前視角</div>
+          <div class="dashboard-hero__meta-value" id="dashboardScopeLabel">載入中...</div>
+        </div>
+      </section>
       <div id="dashboardWarnings"></div>
-      <div class="stat-grid" id="statGrid">
-        ${['人員統計','組織分佈','兼任人員','RACI 覆蓋率','稽核警示','近期異動']
-          .map((_, i) => `<div class="stat-card"><div class="stat-card__label">載入中...</div><div class="stat-card__value">—</div></div>`).join('')}
+      <div class="dashboard-kpi-grid" id="statGrid">
+        ${Array.from({ length: 8 }).map(() => `
+          <div class="dashboard-kpi-card">
+            <div class="dashboard-kpi-card__label">載入中...</div>
+            <div class="dashboard-kpi-card__value">—</div>
+          </div>`).join('')}
       </div>
-      <div id="dashboardLogs" class="card"><div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div></div>
+      <div id="dashboardLogs" class="dashboard-section card"><div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div></div>
       <div id="dashboardDebug" style="margin-top:1rem"></div>
     `;
 
@@ -399,6 +412,7 @@ const Pages = {
       const warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
       const logs = stats.recentLogs || [];
       const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
+      const payrollTotal = stats.personnel?.actualPayrollTotal ?? stats.actualPayroll ?? 0;
       const concurrentCount = Array.isArray(stats.concurrentPersonnel)
         ? stats.concurrentPersonnel.length
         : (stats.concurrentCount || 0);
@@ -407,32 +421,155 @@ const Pages = {
         ? ((stats.auditAlerts.accountabilityIssues > 0 ? stats.auditAlerts.accountabilityIssues : 0)
           + (stats.auditAlerts.roleCodeIssues > 0 ? stats.auditAlerts.roleCodeIssues : 0))
         : '—';
+      const scopeLabelEl = pageCtx.query('#dashboardScopeLabel');
+      const scopeLabelMap = {
+        full: '全域總覽',
+        dept: '部門視角',
+        personal: '個人視角',
+      };
+      if (scopeLabelEl) scopeLabelEl.textContent = scopeLabelMap[stats.scope] || '總覽';
       const statGrid = pageCtx.query('#statGrid');
       if (!statGrid) return;
       const warningDiv = pageCtx.query('#dashboardWarnings');
       if (warningDiv) {
         warningDiv.innerHTML = warnings.length > 0 ? `
-          <div class="card" style="margin-bottom:1rem;border-color:#f0c36d;background:#fff8e6">
-            <div class="card__header"><h3 class="card__title">資料警示</h3></div>
-            <div style="color:var(--color-text-sub);font-size:.9rem;line-height:1.7">
-              ${warnings.map(w => `<div>${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+          <section class="dashboard-alert">
+            <div class="dashboard-alert__header">
+              <h3>資料警示</h3>
+              <span class="badge badge--warning">${warnings.length} 項</span>
             </div>
-          </div>` : '';
+            <div class="dashboard-alert__body">
+              ${warnings.map(w => `<div class="dashboard-alert__item">${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+            </div>
+          </section>` : '';
       }
+      const statusBreakdown = stats.personnel?.statusBreakdown || {};
+      const coreCards = stats.scope === 'personal'
+        ? [
+            {
+              label: '我的狀態',
+              value: Components.escapeHtml(stats.status || stats.person?.status || '—'),
+              tone: 'primary',
+              meta: '目前人員主檔狀態',
+              compact: true,
+            },
+            {
+              label: '實際資薪人員',
+              value: payrollTotal > 0 ? '是' : '否',
+              tone: payrollTotal > 0 ? 'success' : 'neutral',
+              meta: '依既有排除口徑判定',
+              compact: true,
+            },
+            {
+              label: '我的職務數',
+              value: String(stats.assignmentCount || 0),
+              tone: 'primary',
+              meta: concurrentCount > 1 ? `含 ${concurrentCount} 筆兼任` : '單一或未設定職務',
+            },
+            {
+              label: '兼任狀態',
+              value: concurrentCount > 1 ? '兼任中' : '單一職務',
+              tone: concurrentCount > 1 ? 'warning' : 'neutral',
+              meta: '依職務配置筆數判定',
+              compact: true,
+            },
+          ]
+        : [
+            {
+              label: '在職總人數',
+              value: String(total),
+              tone: 'success',
+              meta: `全人員 ${stats.personnel?.totalAll ?? total} 位`,
+            },
+            {
+              label: '實際資薪人員',
+              value: String(payrollTotal),
+              tone: 'primary',
+              meta: '排除倫理委員會、合作單位、委外廠商',
+            },
+            {
+              label: '兼任人員',
+              value: String(concurrentCount),
+              tone: concurrentCount > 0 ? 'warning' : 'neutral',
+              meta: '同一人擁有多筆職務配置',
+            },
+            {
+              label: 'RACI 覆蓋率',
+              value: raciRate === '—' ? '—' : `${raciRate}%`,
+              tone: raciRate !== '—' && Number(raciRate) >= 80 ? 'success' : 'primary',
+              meta: stats.raciCoverage?.total ? `${stats.raciCoverage.covered}/${stats.raciCoverage.total} 已覆蓋` : '未提供覆蓋資料',
+            },
+          ];
+      const secondaryCards = stats.scope === 'personal'
+        ? [
+            {
+              label: '身份角色',
+              value: Components.escapeHtml(user?.roleLabel || '—'),
+              tone: 'neutral',
+              meta: '目前登入角色',
+              compact: true,
+            },
+            {
+              label: '登入帳號',
+              value: Components.escapeHtml(user?.email || '—'),
+              tone: 'neutral',
+              meta: '當前登入識別',
+              compact: true,
+            },
+            {
+              label: '統計範圍',
+              value: Components.escapeHtml(scopeLabelMap[stats.scope] || stats.scope || '—'),
+              tone: 'neutral',
+              meta: '依權限回傳資料',
+              compact: true,
+            },
+          ]
+        : [
+            {
+              label: '稽核警示',
+              value: String(auditAlertCount),
+              tone: Number(auditAlertCount) > 0 ? 'danger' : 'neutral',
+              meta: 'A 欄唯一性與角色代碼檢查',
+            },
+            {
+              label: '身份角色',
+              value: Components.escapeHtml(user?.roleLabel || '—'),
+              tone: 'neutral',
+              meta: '目前登入角色',
+              compact: true,
+            },
+            {
+              label: '登入帳號',
+              value: Components.escapeHtml(user?.email || '—'),
+              tone: 'neutral',
+              meta: '當前登入識別',
+              compact: true,
+            },
+            {
+              label: '統計範圍',
+              value: Components.escapeHtml(scopeLabelMap[stats.scope] || stats.scope || '—'),
+              tone: 'neutral',
+              meta: stats.scope === 'dept'
+                ? `在職 ${stats.personnel?.total ?? 0} / 資薪 ${stats.personnel?.actualPayrollTotal ?? 0}`
+                : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 外派 ${statusBreakdown['外派人員'] || 0}`,
+              compact: true,
+            },
+          ];
+      const renderKpiCard = (card, variant = 'core') => `
+        <article class="dashboard-kpi-card dashboard-kpi-card--${variant} dashboard-kpi-card--${card.tone || 'neutral'}">
+          <div class="dashboard-kpi-card__label">${card.label}</div>
+          <div class="dashboard-kpi-card__value${card.compact ? ' dashboard-kpi-card__value--compact' : ''}">${card.value}</div>
+          <div class="dashboard-kpi-card__meta">${card.meta || '&nbsp;'}</div>
+        </article>`;
       statGrid.innerHTML = `
-        <div class="stat-card"><div class="stat-card__label">在職總人數</div><div class="stat-card__value">${total}</div></div>
-        <div class="stat-card"><div class="stat-card__label">兼任人員</div><div class="stat-card__value">${concurrentCount}</div></div>
-        <div class="stat-card"><div class="stat-card__label">RACI 覆蓋率</div><div class="stat-card__value">${raciRate === '—' ? '—' : `${raciRate}%`}</div></div>
-        <div class="stat-card"><div class="stat-card__label">稽核警示</div><div class="stat-card__value">${auditAlertCount}</div></div>
-        <div class="stat-card"><div class="stat-card__label">身份角色</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(user?.roleLabel || '—')}</div></div>
-        <div class="stat-card"><div class="stat-card__label">登入帳號</div><div class="stat-card__value" style="font-size:.9rem">${Components.escapeHtml(user?.email || '—')}</div></div>
-        <div class="stat-card"><div class="stat-card__label">統計範圍</div><div class="stat-card__value" style="font-size:1rem">${Components.escapeHtml(stats.scope || '—')}</div></div>
+        ${coreCards.map(card => renderKpiCard(card, 'core')).join('')}
+        ${secondaryCards.map(card => renderKpiCard(card, 'secondary')).join('')}
       `;
 
       const logsDiv = pageCtx.query('#dashboardLogs');
       if (!logsDiv) return;
       if (logs.length === 0) {
-        logsDiv.innerHTML = '<div class="card__header"><h3 class="card__title">近期異動紀錄</h3></div><div class="empty-state"><p>尚無操作記錄</p></div>';
+        logsDiv.innerHTML = '<div class="dashboard-section__header"><div><div class="dashboard-section__eyebrow">Recent Activity</div><h3 class="card__title">近期異動紀錄</h3></div></div><div class="empty-state"><p>尚無操作記錄</p></div>';
         return;
       }
       const rows = logs.map(l => `
@@ -443,7 +580,13 @@ const Pages = {
           <td>${Components.escapeHtml(l.target)}</td>
         </tr>`).join('');
       logsDiv.innerHTML = `
-        <div class="card__header"><h3 class="card__title">近期異動紀錄</h3></div>
+        <div class="dashboard-section__header">
+          <div>
+            <div class="dashboard-section__eyebrow">Recent Activity</div>
+            <h3 class="card__title">近期異動紀錄</h3>
+          </div>
+          <div class="dashboard-section__meta">最近 ${logs.length} 筆</div>
+        </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead><tr><th>時間</th><th>操作者</th><th>類型</th><th>對象</th></tr></thead>
