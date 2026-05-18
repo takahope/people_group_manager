@@ -512,17 +512,26 @@ const Pages = {
     };
 
     container.innerHTML = `
-      <div class="page-header">
-        <h1>👥 人員管理</h1>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <div class="search-bar">
-            <input type="search" id="personnelSearch" class="search-bar__input" placeholder="搜尋姓名、信箱、狀態…">
-            <svg class="search-bar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <section class="personnel-header">
+        <div class="personnel-header__intro">
+          <span class="personnel-header__eyebrow">Personnel Directory</span>
+          <div class="personnel-header__headline">
+            <h1>👥 人員管理</h1>
+            <p>快速搜尋人員主檔、檢視員工狀態並維護核心人事資料。</p>
           </div>
-          ${canWrite ? '<button class="btn btn--primary" id="addPersonBtn">＋ 新增人員</button>' : ''}
         </div>
-      </div>
-      <div id="personnelStatusFilters" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+        <div class="personnel-toolbar">
+          <label class="personnel-search" for="personnelSearch">
+            <span class="personnel-search__label">快速搜尋</span>
+            <div class="personnel-search__field">
+              <svg class="personnel-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input type="search" id="personnelSearch" class="personnel-search__input" placeholder="搜尋姓名、信箱、狀態…">
+            </div>
+          </label>
+          ${canWrite ? '<button class="btn btn--primary personnel-toolbar__action" id="addPersonBtn">＋ 新增人員</button>' : ''}
+        </div>
+      </section>
+      <div id="personnelStatusFilters" class="personnel-status-filters">
         ${statusOptions.map(option => `<button class="btn btn--ghost btn--sm" data-status="${option.key}">${option.label}</button>`).join('')}
       </div>
       <div id="personnelTable">
