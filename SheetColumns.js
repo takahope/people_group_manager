@@ -6,7 +6,11 @@
  * - 所有 getRange(row, col, ...) 的欄號一律使用 1-based
  */
 
-const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'EXTERNAL']);
+const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'ASSET', 'EXTERNAL']);
+
+/** @const {string} 視為「在勤（active）」的人員狀態值。集中管理以避免用詞漂移。 */
+const ACTIVE_PERSONNEL_STATUS = '在勤';
+
 const PERSONNEL_STATUSES = new Set([
   '在勤',
   '育嬰假',
@@ -42,6 +46,14 @@ const COL = {
     TITLE: 4,
     MANAGER_EMAIL: 5,
     MANAGER_NAME: 6,
+  },
+  // 兼任欄位為「唯讀」用途，刻意獨立於 COL.ASSIGNMENT。
+  // 切勿併入 COL.ASSIGNMENT，否則 widthFromColMap(COL.ASSIGNMENT) 會變大，
+  // 導致 updateAssignmentByRow 等 7 欄寫入的範圍寬度與資料陣列不符而出錯。
+  ASSIGNMENT_CONCURRENT: {
+    ORG_CODE: 7,   // 兼任組別代碼（正式資料第 8 欄）
+    ORG_NAME: 8,   // 兼任組別
+    TITLE: 9,      // 兼任職稱
   },
   RACI: {
     TASK_CODE: 0,

@@ -19,7 +19,16 @@ function getOrgTree(orgType) {
 
     const flatList = DataService.getSheet2Data(orgType);
     const tree = buildSafeOrgTree(flatList);
-    return successResponse(tree);
+
+    // 由實際資料動態提供可用的組織類型，供前端產生篩選分頁
+    // （正式資料的組織類型為中文，demo 為英文代碼，皆能涵蓋）
+    const availableTypes = [...new Set(
+      DataService.getSheet2Data(null)
+        .map(o => o.type)
+        .filter(Boolean)
+    )];
+
+    return successResponse({ ...tree, availableTypes });
   } catch (error) {
     return errorResponse(error.message);
   }
@@ -94,7 +103,7 @@ function getStationManagementDashboard() {
       .sort((a, b) => String(a.name || a.code).localeCompare(String(b.name || b.code), 'zh-Hant'));
 
     const managerOptions = allPersonnel
-      .filter(person => person.status === '在職')
+      .filter(person => person.status === ACTIVE_PERSONNEL_STATUS)
       .sort((a, b) => String(a.name || a.email).localeCompare(String(b.name || b.email), 'zh-Hant'))
       .map(person => ({
         email: person.email,
@@ -135,8 +144,8 @@ function updateStationManager(stationCode, managerEmail) {
     }
 
     const manager = DataService.findPersonByEmail(managerEmail);
-    if (!manager || manager.status !== '在職') {
-      return errorResponse(`負責人 ${managerEmail} 不存在或非在職`);
+    if (!manager || manager.status !== ACTIVE_PERSONNEL_STATUS) {
+      return errorResponse(`負責人 ${managerEmail} 不存在或非在勤`);
     }
 
     const updatedNode = {

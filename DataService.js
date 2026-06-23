@@ -181,6 +181,10 @@ function rowToAssignment(row, rowIndex) {
     title:        row[COL.ASSIGNMENT.TITLE],
     managerEmail: row[COL.ASSIGNMENT.MANAGER_EMAIL] || '',
     managerName:  row[COL.ASSIGNMENT.MANAGER_NAME] || '',
+    // 兼任欄位（唯讀）：供角色解析使用，寫入仍只處理主要 7 欄
+    concurrentOrgCode: row[COL.ASSIGNMENT_CONCURRENT.ORG_CODE] || '',
+    concurrentOrgName: row[COL.ASSIGNMENT_CONCURRENT.ORG_NAME] || '',
+    concurrentTitle:   row[COL.ASSIGNMENT_CONCURRENT.TITLE] || '',
     rowIndex,
   };
 }

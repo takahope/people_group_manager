@@ -51,12 +51,12 @@ const Router = (() => {
       loaderKey: 'loadStations',
     },
     {
-      hash: '#/raci', label: 'RACI 查詢', icon: '📋', section: '資安管理',
+      hash: '#/raci', label: 'RACI 查詢', icon: '📋', section: 'RACI 管理',
       feature: 'raci.read',
       loaderKey: 'loadRaci',
     },
     {
-      hash: '#/raci/me', label: '我的責任', icon: '🙋', section: '資安管理',
+      hash: '#/raci/me', label: '我的責任', icon: '🙋', section: 'RACI 管理',
       feature: 'raci.read',
       loaderKey: 'loadMyRaci',
     },
@@ -1832,13 +1832,18 @@ const Pages = {
   async loadOrg(container, user, pageCtx) {
     container.innerHTML = `
       <div class="page-header"><h1>🌳 組織架構</h1></div>
-      <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap" id="orgTypeTabs">
-        ${['全部','ORG','TF','PARTNER','GOV'].map((t,i) =>
-          `<button class="btn ${i===0?'btn--primary':'btn--ghost'} btn--sm" data-type="${i===0?'':t}">${{ORG:'行政組織',TF:'任務編組',PARTNER:'合作單位',GOV:'外部機關','全部':'全部'}[t]||t}</button>`
-        ).join('')}
+      <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap" id="orgTypeTabs"></div>
+        <div style="display:flex;gap:.25rem" id="orgViewToggle">
+          <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
+          <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
+        </div>
       </div>
       <div id="orgWarnings"></div>
       <div id="orgTreeContainer" class="card"></div>`;
+
+    // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
+    const orgView = { mode: 'list', type: null, result: null };
 
     let activeMemberRequestId = 0;
     const prefetchState = Pages._orgMemberPrefetchState = {
@@ -1947,32 +1952,63 @@ const Pages = {
       }
     };
 
-    const renderTree = async (type) => {
+    // 依實際資料動態渲染型別篩選分頁（第一顆固定為「全部」）
+    const renderTypeTabs = (availableTypes) => {
+      const tabsEl = pageCtx.query('#orgTypeTabs');
+      if (!tabsEl) return;
+      const types = Array.isArray(availableTypes) ? availableTypes : [];
+      const tabs = [{ value: '', label: '全部' }, ...types.map(t => ({ value: t, label: t }))];
+      tabsEl.innerHTML = tabs.map(tab =>
+        `<button class="btn ${tab.value === (orgView.type || '') ? 'btn--primary' : 'btn--ghost'} btn--sm" data-type="${Components.escapeHtml(tab.value)}">${Components.escapeHtml(tab.label)}</button>`
+      ).join('');
+    };
+
+    // 依目前檢視模式（清單／組織圖）渲染已快取的查詢結果，不重打 API
+    const paintOrg = () => {
       if (!pageCtx.isActive()) return;
       const treeDiv = pageCtx.query('#orgTreeContainer');
       const warningDiv = pageCtx.query('#orgWarnings');
       if (!treeDiv) return;
+
+      const result = orgView.result;
+      const tree = Array.isArray(result?.nodes) ? result.nodes : [];
+      const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
+
+      if (warningDiv) {
+        warningDiv.innerHTML = warnings.length > 0 ? `
+          <div class="card" style="margin-bottom:1rem;border-color:#f0c36d;background:#fff8e6">
+            <div class="card__header"><h3 class="card__title">組織資料警示</h3></div>
+            <div style="color:var(--color-text-sub);font-size:.9rem;line-height:1.7">
+              ${warnings.map(w => `<div>${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+            </div>
+          </div>` : '';
+      }
+
+      treeDiv.innerHTML = '';
+      if (tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
+
+      const opts = { onNodeClick: openOrgMemberModal };
+      if (orgView.mode === 'chart') {
+        treeDiv.classList.add('card--flush');
+        treeDiv.appendChild(Components.OrgChart(tree, opts));
+      } else {
+        treeDiv.classList.remove('card--flush');
+        tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0, opts)));
+      }
+    };
+
+    const renderTree = async (type) => {
+      if (!pageCtx.isActive()) return;
+      const treeDiv = pageCtx.query('#orgTreeContainer');
+      if (!treeDiv) return;
+      orgView.type = type || null;
       treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
-      if (warningDiv) warningDiv.innerHTML = '';
       try {
         const result = await API.getOrgTree(type || null);
         if (!pageCtx.isActive()) return;
-        const tree = Array.isArray(result?.nodes) ? result.nodes : [];
-        const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
-        treeDiv.innerHTML = '';
-        if (warningDiv && warnings.length > 0) {
-          warningDiv.innerHTML = `
-            <div class="card" style="margin-bottom:1rem;border-color:#f0c36d;background:#fff8e6">
-              <div class="card__header"><h3 class="card__title">組織資料警示</h3></div>
-              <div style="color:var(--color-text-sub);font-size:.9rem;line-height:1.7">
-                ${warnings.map(w => `<div>${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
-              </div>
-            </div>`;
-        }
-        if (!tree || tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
-        tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0, {
-          onNodeClick: openOrgMemberModal,
-        })));
+        orgView.result = result;
+        renderTypeTabs(result?.availableTypes);
+        paintOrg();
       } catch (err) {
         if (!pageCtx.isActive()) return;
         console.error('loadOrg 失敗：', err);
@@ -1991,15 +2027,27 @@ const Pages = {
     await renderTree(null);
 
     const orgTabs = pageCtx.query('#orgTypeTabs');
-    if (!orgTabs) return;
-    orgTabs.addEventListener('click', async e => {
-      if (!pageCtx.isActive()) return;
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      container.querySelectorAll('#orgTypeTabs button').forEach(b => b.className = 'btn btn--ghost btn--sm');
-      btn.className = 'btn btn--primary btn--sm';
-      await renderTree(btn.dataset.type || null);
-    });
+    if (orgTabs) {
+      orgTabs.addEventListener('click', async e => {
+        if (!pageCtx.isActive()) return;
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        await renderTree(btn.dataset.type || null);
+      });
+    }
+
+    const viewToggle = pageCtx.query('#orgViewToggle');
+    if (viewToggle) {
+      viewToggle.addEventListener('click', e => {
+        if (!pageCtx.isActive()) return;
+        const btn = e.target.closest('button');
+        if (!btn || !btn.dataset.view || btn.dataset.view === orgView.mode) return;
+        orgView.mode = btn.dataset.view;
+        viewToggle.querySelectorAll('button').forEach(b =>
+          b.className = `btn ${b.dataset.view === orgView.mode ? 'btn--primary' : 'btn--ghost'} btn--sm`);
+        paintOrg();
+      });
+    }
   },
 
   // ========================
@@ -2617,52 +2665,66 @@ const Pages = {
   // RACI 查詢
   // ========================
   async loadRaci(container, user, pageCtx) {
-    const taskCodes = ['ISMS-DOC','ISMS-RISK','ISMS-SEC','ISMS-INC','ISMS-OPS','ISMS-AUDIT','ISMS-BCM','PIMS-OP'];
     container.innerHTML = `
       <div class="page-header">
         <h1>📋 RACI 矩陣查詢</h1>
         <a href="#/raci/me" class="btn btn--ghost btn--sm">🙋 我的責任</a>
       </div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem" id="raciTaskTabs">
         <button class="btn btn--primary btn--sm" data-task="">全部</button>
-        ${taskCodes.map(t => `<button class="btn btn--ghost btn--sm" data-task="${t}">${t}</button>`).join('')}
       </div>
       <div id="raciTable"><div class="page-loading"><div class="spinner"></div></div></div>`;
 
-    let roleMap = new Map();
+    // 一次抓全部 RACI 與角色對照表；任務分頁與表格皆由此資料推導／前端過濾
+    let allRaci = [];
+    const roleMap = new Map();
     try {
-      const roleData = await API.getRoleMap().catch(() => []);
+      const [raciData, roleData] = await Promise.all([
+        API.getRaciByTask(null),
+        API.getRoleMap().catch(() => []),
+      ]);
       if (!pageCtx.isActive()) return;
-      roleData.forEach(r => roleMap.set(r.roleCode, r.roleName));
-    } catch (e) {}
+      allRaci = Array.isArray(raciData) ? raciData : [];
+      (roleData || []).forEach(r => roleMap.set(r.roleCode, r.roleName));
+    } catch (err) {
+      if (!pageCtx.isActive()) return;
+      console.error('loadRaci 失敗：', err);
+      API.handleError(err);
+      Components.renderLoadError('raciTable', {
+        title: 'RACI 載入失敗',
+        message: '無法取得 RACI 清單。',
+        details: err.message,
+        actionLabel: '重試',
+        onAction: () => Router.navigateTo(pageCtx.hash),
+      });
+      return;
+    }
 
-    const renderRaciTable = async (taskCode) => {
+    // 由實際資料動態產生任務篩選分頁（維持工作表出現順序，標題帶任務名稱）
+    const taskNameByCode = new Map();
+    allRaci.forEach(r => {
+      if (r.taskCode && !taskNameByCode.has(r.taskCode)) taskNameByCode.set(r.taskCode, r.taskName || '');
+    });
+    const tabsEl = pageCtx.query('#raciTaskTabs');
+    if (tabsEl) {
+      const tabs = ['', ...taskNameByCode.keys()];
+      tabsEl.innerHTML = tabs.map((code, i) =>
+        `<button class="btn ${i === 0 ? 'btn--primary' : 'btn--ghost'} btn--sm" data-task="${Components.escapeHtml(code)}" title="${Components.escapeHtml(taskNameByCode.get(code) || '')}">${i === 0 ? '全部' : Components.escapeHtml(code)}</button>`
+      ).join('');
+    }
+
+    const renderRaciTable = (taskCode) => {
       if (!pageCtx.isActive()) return;
       const div = pageCtx.query('#raciTable');
       if (!div) return;
-      div.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
-      try {
-        const data = await API.getRaciByTask(taskCode || null);
-        if (!pageCtx.isActive()) return;
-        div.innerHTML = `<div class="table-wrapper"><table class="data-table">
-          <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>R 執行</th><th>A 當責</th><th>C 諮詢</th><th>I 告知</th><th>備註</th></tr></thead>
-          <tbody>${data.length ? data.map(r => Components.RaciRow(r, roleMap)).join('') : '<tr><td colspan="8"><div class="empty-state"><p>無資料</p></div></td></tr>'}</tbody>
-        </table></div>`;
-      } catch (err) {
-        if (!pageCtx.isActive()) return;
-        console.error('loadRaci 失敗：', err);
-        API.handleError(err);
-        Components.renderLoadError('raciTable', {
-          title: 'RACI 載入失敗',
-          message: '無法取得 RACI 清單。',
-          details: err.message,
-          actionLabel: '重試',
-          onAction: () => Router.navigateTo(pageCtx.hash),
-        });
-      }
+      const rows = taskCode ? allRaci.filter(r => r.taskCode === taskCode) : allRaci;
+      div.innerHTML = `<div class="table-wrapper"><table class="data-table">
+        <thead><tr><th>任務代碼</th><th>工作項目代碼</th><th>工作項目名稱</th><th>R 執行</th><th>A 當責</th><th>C 諮詢</th><th>I 告知</th><th>備註</th></tr></thead>
+        <tbody>${rows.length ? rows.map(r => Components.RaciRow(r, roleMap)).join('') : '<tr><td colspan="8"><div class="empty-state"><p>無資料</p></div></td></tr>'}</tbody>
+      </table></div>`;
     };
 
-    await renderRaciTable(null);
+    renderRaciTable(null);
 
     if (!pageCtx.isActive()) return;
     container.querySelectorAll('button[data-task]').forEach(btn => {
@@ -2670,7 +2732,7 @@ const Pages = {
         if (!pageCtx.isActive()) return;
         container.querySelectorAll('button[data-task]').forEach(b => b.className = 'btn btn--ghost btn--sm');
         btn.className = 'btn btn--primary btn--sm';
-        renderRaciTable(btn.dataset.task);
+        renderRaciTable(btn.dataset.task || null);
       };
     });
   },

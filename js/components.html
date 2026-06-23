@@ -399,6 +399,58 @@ const Components = (() => {
   }
 
   // =============================================
+  // 組織圖（OrgChart）— 純 CSS 由上而下組織圖
+  // =============================================
+
+  /**
+   * 以巢狀 <ul>/<li> 渲染圖形化組織圖，與 OrgNode（縮排清單）共用同一份
+   * buildSafeOrgTree 巢狀資料。連接線由 .org-chart 的 CSS 繪製。
+   *
+   * @param {Array<Object>} nodes - 含 children 的根節點陣列
+   * @param {{onNodeClick?: Function}} options
+   * @returns {HTMLElement}
+   */
+  function OrgChart(nodes, options = {}) {
+    const wrap = document.createElement('div');
+    wrap.className = 'org-chart';
+
+    const rootUl = document.createElement('ul');
+    nodes.forEach(node => rootUl.appendChild(orgChartNode_(node, options)));
+    wrap.appendChild(rootUl);
+    return wrap;
+  }
+
+  /**
+   * 遞迴建立單一組織圖節點（<li> 內含方框，子節點包在巢狀 <ul>）。
+   */
+  function orgChartNode_(node, options) {
+    const li = document.createElement('li');
+
+    const box = document.createElement('button');
+    box.type = 'button';
+    box.className = 'org-chart__box';
+    box.innerHTML = `
+      <span class="org-chart__code">${escapeHtml(node.code)}</span>
+      <span class="org-chart__name">${escapeHtml(node.name)}</span>
+      ${node.alias ? `<span class="org-chart__alias">${escapeHtml(node.alias)}</span>` : ''}
+      <span class="org-chart__meta">
+        <span class="badge badge--neutral">${orgTypeBadge(node.type)}</span>
+        ${node.managerName ? `<span class="org-chart__mgr">👤 ${escapeHtml(node.managerName)}</span>` : ''}
+      </span>`;
+    box.onclick = () => {
+      if (typeof options.onNodeClick === 'function') options.onNodeClick(node);
+    };
+    li.appendChild(box);
+
+    if (node.children && node.children.length > 0) {
+      const ul = document.createElement('ul');
+      node.children.forEach(child => ul.appendChild(orgChartNode_(child, options)));
+      li.appendChild(ul);
+    }
+    return li;
+  }
+
+  // =============================================
   // 人員卡片（PersonCard）
   // =============================================
 
@@ -757,6 +809,7 @@ const Components = (() => {
     renderModalProgress,
     DataTable,
     OrgNode,
+    OrgChart,
     renderOrgMemberListModal,
     renderPersonnelAssignmentModal,
     PersonCard,

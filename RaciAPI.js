@@ -212,7 +212,12 @@ function findRolePositions(roleCode, raciItem) {
 function resolveEmailToRoleCodes(email) {
   const roleMap = DataService.getSheet5Data();
   const assignments = DataService.getSheet3DataByEmail(email);
-  const orgCodes = assignments.map(a => a.orgCode);
+  // 同時納入主要組別與兼任組別代碼，去除空值並去重
+  const orgCodes = [...new Set(
+    assignments
+      .flatMap(a => [a.orgCode, a.concurrentOrgCode])
+      .filter(Boolean)
+  )];
 
   const matchedCodes = roleMap
     .filter(role => matchesEntity(role, email, orgCodes))
@@ -262,7 +267,7 @@ function matchesEntity(role, email, orgCodes) {
 function resolveEntityId(entityId) {
   if (!entityId) return [];
 
-  // ALL → 全體在職人員
+  // ALL → 全體在勤人員
   if (entityId === 'ALL') {
     return DataService.getSheet1Data()
       .filter(isActivePersonnel_)
@@ -296,7 +301,7 @@ function resolveEntityId(entityId) {
 }
 
 function isActivePersonnel_(person) {
-  return !!person && person.status === '在職';
+  return !!person && person.status === ACTIVE_PERSONNEL_STATUS;
 }
 
 function dedupeResolvedEntities_(entities) {

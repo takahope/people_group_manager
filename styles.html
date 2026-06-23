@@ -216,6 +216,7 @@ ul, ol { list-style: none; }
   padding: 1.25rem;
   box-shadow: var(--shadow-sm);
 }
+.card--flush { padding: 0; }
 .card__header { margin-bottom: .75rem; }
 .card__title { font-size: 1rem; font-weight: 600; color: var(--color-text); }
 
@@ -1732,6 +1733,104 @@ ul, ol { list-style: none; }
   padding-left: .75rem;
 }
 .org-node__children[hidden] { display: none; }
+
+/* =============================================
+   組織圖（OrgChart）— 純 CSS 由上而下組織圖
+   ============================================= */
+.org-chart {
+  overflow-x: auto;
+  padding: 1.5rem .5rem .5rem;
+}
+.org-chart ul {
+  display: flex;
+  justify-content: center;
+  padding-top: 1.25rem;
+  position: relative;
+  list-style: none;
+  margin: 0;
+}
+.org-chart li {
+  position: relative;
+  padding: 1.25rem .5rem 0;
+  text-align: center;
+}
+/* 子節點上方的垂直連接線 */
+.org-chart li::before,
+.org-chart li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 1.25rem;
+  border-top: 2px solid var(--color-border);
+}
+.org-chart li::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid var(--color-border);
+}
+/* 唯一子節點：只留中間直線，去掉左右橫線 */
+.org-chart li:only-child::before,
+.org-chart li:only-child::after { display: none; }
+.org-chart li:only-child { padding-top: 1.25rem; }
+/* 第一個 / 最後一個子節點：修掉外側多餘的橫線 */
+.org-chart li:first-child::before,
+.org-chart li:last-child::after { border: 0 none; }
+.org-chart li:last-child::before {
+  border-right: 2px solid var(--color-border);
+  border-radius: 0 5px 0 0;
+}
+.org-chart li:first-child::after { border-radius: 5px 0 0 0; }
+/* 父節點下方往子節點的垂直線 */
+.org-chart ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 1.25rem;
+  border-left: 2px solid var(--color-border);
+}
+/* 根層（最外層 ul）不需頂部連接線 */
+.org-chart > ul { padding-top: 0; }
+.org-chart > ul > li { padding-top: 0; }
+.org-chart > ul > li::before,
+.org-chart > ul > li::after { display: none; }
+
+.org-chart__box {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .25rem;
+  min-width: 9rem;
+  max-width: 13rem;
+  padding: .55rem .75rem;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  transition: border-color .15s, box-shadow .15s;
+}
+.org-chart__box:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(26,115,232,.18);
+}
+.org-chart__code { font-size: .7rem; color: var(--color-text-sub); font-family: var(--font-mono); }
+.org-chart__name { font-weight: 600; line-height: 1.3; }
+.org-chart__alias { font-size: .75rem; color: var(--color-text-sub); }
+.org-chart__meta {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: .15rem;
+}
+.org-chart__mgr { font-size: .72rem; color: var(--color-text-sub); }
 
 /* =============================================
    組織成員清單
