@@ -150,11 +150,15 @@ function renderIsmsOrgMemberDoc_(sectionsByKey) {
   const templateId = (props.getProperty(ISMS_DOC_PROPS.TEMPLATE_ID) || '').trim();
   const folderId = (props.getProperty(ISMS_DOC_PROPS.OUTPUT_FOLDER_ID) || '').trim();
 
+  // 缺值時附上「store 內目前實際存在的 key 清單」，便於一眼比對鍵名落差（只列 key，不洩漏值）
+  const presentKeys = props.getKeys();
   if (!templateId) {
-    throw new Error('尚未設定範本 Doc ID，請於 Script Properties 設定 ' + ISMS_DOC_PROPS.TEMPLATE_ID);
+    throw new Error('尚未設定範本 Doc ID（需要 key：' + ISMS_DOC_PROPS.TEMPLATE_ID +
+      '）。目前 Script Properties 內的 key：[' + presentKeys.join(', ') + ']');
   }
   if (!folderId) {
-    throw new Error('尚未設定輸出資料夾 ID，請於 Script Properties 設定 ' + ISMS_DOC_PROPS.OUTPUT_FOLDER_ID);
+    throw new Error('尚未設定輸出資料夾 ID（需要 key：' + ISMS_DOC_PROPS.OUTPUT_FOLDER_ID +
+      '）。目前 Script Properties 內的 key：[' + presentKeys.join(', ') + ']');
   }
 
   const dateKey = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd');
@@ -281,6 +285,34 @@ function matchSectionKey_(headerText) {
     return s.matchNames.some(function (n) { return headerText.indexOf(n) >= 0 || n.indexOf(headerText) >= 0; });
   });
   return partial ? partial.key : null;
+}
+
+// =============================================
+// 診斷工具（供開發者於 Apps Script 編輯器手動執行）
+// =============================================
+
+/**
+ * 診斷 Script Properties 設定。
+ * 用法：於 Apps Script 編輯器函式下拉選 diagnoseIsmsDocConfig → Run，
+ * 至「執行項目／執行記錄」查看 Logger.log 輸出，比對鍵名是否正確存在。
+ */
+function diagnoseIsmsDocConfig() {
+  const props = PropertiesService.getScriptProperties();
+  const keys = props.getKeys();
+  Logger.log('========== [ISMS Doc Config Diagnose] ==========');
+  Logger.log('全部 Script Property keys（共 ' + keys.length + '）：' + JSON.stringify(keys));
+  [ISMS_DOC_PROPS.TEMPLATE_ID, ISMS_DOC_PROPS.OUTPUT_FOLDER_ID].forEach(function (k) {
+    const v = props.getProperty(k);
+    Logger.log('[' + k + '] 存在=' + (v != null) + '，長度=' + (v ? v.length : 0) +
+      '，trim 後長度=' + (v ? v.trim().length : 0));
+  });
+  // 反向揪出隱形空白／全形空白的可疑鍵名
+  keys.forEach(function (k) {
+    if (k !== k.trim() || /[　]/.test(k)) {
+      Logger.log('[疑似異常鍵] 原始=' + JSON.stringify(k) + '（含前後空白或全形空白）');
+    }
+  });
+  Logger.log('================================================');
 }
 
 // =============================================
