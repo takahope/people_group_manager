@@ -540,7 +540,8 @@ const Components = (() => {
       startY = e.clientY;
       startTx = state.tx;
       startTy = state.ty;
-      canvas.setPointerCapture(e.pointerId);
+      // 注意：不在此處 setPointerCapture，否則後續 click 會被改派到 canvas，
+      //       節點按鈕收不到 click，成員清單 modal 就打不開。只有真的拖曳時才捕獲。
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -550,6 +551,7 @@ const Components = (() => {
       if (!moved && Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) {
         moved = true;
         canvas.classList.add('dragging');
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
       }
       if (moved) {
         state.tx = startTx + dx;
