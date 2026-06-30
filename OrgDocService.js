@@ -31,7 +31,7 @@ const ISMS_RECORD_PREFIX_DEFAULT = 'TWHB-ISMSPIMS-004-002';
  * kind=group   ：執行/稽核/應變小組（組長 + 組員 N）
  */
 const ISMS_TEMPLATE_SECTIONS = [
-  { key: 'committee', kind: 'committee', matchNames: ['資訊安全暨個人資料管理委員會', '資安個資管理委員會'] },
+  { key: 'committee', kind: 'committee', matchNames: ['資訊安全暨個人資料保護管理委員會', '資訊安全暨個人資料管理委員會', '資安個資管理委員會'] },
   { key: 'sec',       kind: 'group',     matchNames: ['資訊安全執行小組', '資安執行小組'] },
   { key: 'pims',      kind: 'group',     matchNames: ['個人資料管理執行小組', '個資管理執行小組'] },
   { key: 'audit',     kind: 'group',     matchNames: ['內部稽核執行小組'] },
@@ -65,11 +65,12 @@ function buildIsmsOrgMemberData_() {
       const enriched = DataService.getSheet3DataByOrgCode(node.code).map(function (a) {
         const person = DataService.findPersonByEmail(a.email) || {};
         return {
-          title:  a.title || '',
-          name:   a.name || person.name || '',
-          email:  a.email || '',
-          phone:  person.phone || '',
-          mobile: person.mobile || '',
+          roleTitle: a.title || '',                            // 該區塊 E 欄職稱 → 用於 WHO 比對
+          title:     resolveDisplayTitle_(a.email, a.title),   // 顯示「職稱」(行政層級最高 D/E，退回 E)
+          name:      a.name || person.name || '',
+          email:     a.email || '',
+          phone:     person.phone || '',
+          mobile:    person.mobile || '',
         };
       });
 
@@ -82,12 +83,12 @@ function buildIsmsOrgMemberData_() {
       };
 
       if (section.kind === 'committee') {
-        slot.convener = pick(function (e) { return /召集人/.test(e.title); })
+        slot.convener = pick(function (e) { return /召集人/.test(e.roleTitle); })
                      || pick(function (e) { return e.email && e.email === managerEmail; })
                      || personFromManager_(node);
-        slot.ciso = pick(function (e) { return /資訊安全長/.test(e.title) || /資料保護長/.test(e.title); });
+        slot.ciso = pick(function (e) { return /資訊安全長/.test(e.roleTitle) || /資料保護長/.test(e.roleTitle); });
       } else {
-        slot.leader = pick(function (e) { return /組長/.test(e.title); })
+        slot.leader = pick(function (e) { return /組長/.test(e.roleTitle); })
                    || pick(function (e) { return e.email && e.email === managerEmail; })
                    || personFromManager_(node);
       }
@@ -110,14 +111,50 @@ function buildIsmsOrgMemberData_() {
 function personFromManager_(node) {
   if (!node || !node.managerEmail) return null;
   const person = DataService.findPersonByEmail(node.managerEmail) || {};
-  const assigns = DataService.getSheet3DataByEmail(node.managerEmail) || [];
   return {
-    title:  assigns.length ? (assigns[0].title || '') : '',
+    roleTitle: '',                                              // 管理人不必然在該區塊有職務配置
+    title:  resolveDisplayTitle_(node.managerEmail, ''),        // 行政層級最高 D/E（無則留空）
     name:   node.managerName || person.name || '',
     email:  node.managerEmail,
     phone:  person.phone || '',
     mobile: person.mobile || '',
   };
+}
+
+/**
+ * 是否為「行政」類型組織節點（正式資料中文值 / demo 代碼皆相容）。
+ * @param {string} type
+ * @returns {boolean}
+ */
+function isAdminOrgType_(type) {
+  return type === '行政' || type === 'ORG';
+}
+
+/**
+ * 表格「職稱」欄取值：掃描此人在「行政」類型節點中層級最高（COL.ORG.LEVEL 數字最小）者，
+ * 回該人在此節點職務配置的「所屬組別(D)/職稱(E)」；D 與 E 相同時只回 E。
+ * 找不到行政類型職務時退回 fallbackTitle（該區塊職務配置 E 欄）。
+ *
+ * @param {string} email
+ * @param {string} fallbackTitle
+ * @returns {string}
+ */
+function resolveDisplayTitle_(email, fallbackTitle) {
+  const assigns = DataService.getSheet3DataByEmail(email) || [];
+  let best = null;
+  let bestLevel = Infinity;
+  assigns.forEach(function (a) {
+    const node = DataService.findOrgByCode(a.orgCode);
+    if (!node || !isAdminOrgType_(node.type)) return;
+    const lvl = Number(node.level);
+    if (!isNaN(lvl) && lvl < bestLevel) { bestLevel = lvl; best = a; }
+  });
+  if (best) {
+    const dept = best.orgName || '';   // D 所屬組別
+    const title = best.title || '';    // E 職稱
+    return (dept && dept !== title) ? (dept + '/' + title) : title;
+  }
+  return fallbackTitle || '';
 }
 
 /**
