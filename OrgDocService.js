@@ -168,7 +168,8 @@ function renderIsmsOrgMemberDoc_(sectionsByKey) {
   // 日期與紀錄編號（紀錄編號需在 makeCopy 前算好，掃描須早於新檔建立）
   const tz = Session.getScriptTimeZone();
   const now = new Date();
-  const dateKey = Utilities.formatDate(now, tz, 'yyyyMMdd');
+  // 紀錄編號用的日期鍵：西元年只取後兩位（例 260630 → 2026/06/30）
+  const dateKey = Utilities.formatDate(now, tz, 'yyMMdd');
   const year = Utilities.formatDate(now, tz, 'yyyy');
   const month = Utilities.formatDate(now, tz, 'MM');
   const day = Utilities.formatDate(now, tz, 'dd');
