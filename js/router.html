@@ -1875,7 +1875,7 @@ const Pages = {
         Components.showToast('正在生成文件，請稍候…（冷啟動可能需 30 秒以上）', 'info');
         // 文件生成屬長時間操作，冷啟動易超過預設 15s，改用 120s 逾時
         const result = await API.callGASWithTimeout(tpl.apiFn, 120000);
-        Components.showToast('文件已生成：' + (result?.fileName || ''), 'success');
+        Components.showToast('文件已生成' + (result?.recordNo ? '（紀錄編號：' + result.recordNo + '）' : ''), 'success');
         if (result?.url) {
           const win = window.open(result.url, '_blank');
           if (!win) Components.showToast('已生成，但瀏覽器擋下新分頁；請至輸出資料夾查看', 'warning');

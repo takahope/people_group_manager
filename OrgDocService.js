@@ -19,7 +19,11 @@
 const ISMS_DOC_PROPS = {
   TEMPLATE_ID: 'ISMS_ORG_DOC_TEMPLATE_ID',
   OUTPUT_FOLDER_ID: 'ISMS_ORG_DOC_OUTPUT_FOLDER_ID',
+  RECORD_PREFIX: 'ISMS_ORG_DOC_RECORD_PREFIX',
 };
+
+/** 紀錄編號前綴預設值（未於 Script Properties 設定 RECORD_PREFIX 時採用）。 */
+const ISMS_RECORD_PREFIX_DEFAULT = 'TWHB-ISMSPIMS-004-002';
 
 /**
  * 範本 6 區塊宣告式設定（依「組織名稱」自動比對組織節點，含別名容錯）。
@@ -143,7 +147,7 @@ function findOrgNodeByNames_(allOrg, matchNames) {
  * 複製範本 Doc、填入資料、存入輸出資料夾，回傳連結。
  *
  * @param {Object} sectionsByKey - buildIsmsOrgMemberData_() 的結果
- * @returns {{ url, fileId, fileName }}
+ * @returns {{ url, fileId, fileName, recordNo }}
  */
 function renderIsmsOrgMemberDoc_(sectionsByKey) {
   const props = PropertiesService.getScriptProperties();
@@ -161,14 +165,26 @@ function renderIsmsOrgMemberDoc_(sectionsByKey) {
       '）。目前 Script Properties 內的 key：[' + presentKeys.join(', ') + ']');
   }
 
-  const dateKey = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyyMMdd');
-  const fileName = 'TWHB-ISMSPIMS-004-002資訊安全暨個人資料管理組織成員表_' + dateKey;
+  // 日期與紀錄編號（紀錄編號需在 makeCopy 前算好，掃描須早於新檔建立）
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const dateKey = Utilities.formatDate(now, tz, 'yyyyMMdd');
+  const year = Utilities.formatDate(now, tz, 'yyyy');
+  const month = Utilities.formatDate(now, tz, 'MM');
+  const day = Utilities.formatDate(now, tz, 'dd');
 
-  const templateFile = DriveApp.getFileById(templateId);
+  const prefix = (props.getProperty(ISMS_DOC_PROPS.RECORD_PREFIX) || '').trim() || ISMS_RECORD_PREFIX_DEFAULT;
   const outputFolder = DriveApp.getFolderById(folderId);
-  const copiedFile = templateFile.makeCopy(fileName, outputFolder);
+  const recordNo = createRecordNoFromFolder_(outputFolder, prefix, dateKey);
+
+  const fileName = 'TWHB-ISMSPIMS-004-002資訊安全暨個人資料管理組織成員表_' + recordNo;
+  const copiedFile = DriveApp.getFileById(templateId).makeCopy(fileName, outputFolder);
 
   const doc = DocumentApp.openById(copiedFile.getId());
+
+  // 置換首頁（頁首）佔位符：{{年}}/{{月}}/{{日}}/{{紀錄編號}}
+  replaceTemplateTokens_(doc, { '年': year, '月': month, '日': day, '紀錄編號': recordNo });
+
   const tables = doc.getBody().getTables();
   if (!tables.length) {
     throw new Error('範本中找不到表格，請確認範本 Doc ID 是否正確。');
@@ -177,7 +193,58 @@ function renderIsmsOrgMemberDoc_(sectionsByKey) {
   fillIsmsTable_(tables[0], sectionsByKey);
 
   doc.saveAndClose();
-  return { url: doc.getUrl(), fileId: copiedFile.getId(), fileName: fileName };
+  return { url: doc.getUrl(), fileId: copiedFile.getId(), fileName: fileName, recordNo: recordNo };
+}
+
+/**
+ * 轉義正則表示式特殊字元。
+ * @param {string} value
+ * @returns {string}
+ */
+function escapeRegExp_(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 依輸出資料夾現有檔案產生當日不重複紀錄編號：{前綴}-{yyyyMMdd}-{NN}。
+ * 掃描資料夾中檔名含 `前綴-dateKey-(數字)` 者取最大流水號 +1，<100 補兩位數。
+ *
+ * @param {Folder} folder
+ * @param {string} prefix
+ * @param {string} dateKey - yyyyMMdd
+ * @returns {string}
+ */
+function createRecordNoFromFolder_(folder, prefix, dateKey) {
+  const pattern = new RegExp(escapeRegExp_(prefix) + '-' + dateKey + '-(\\d+)');
+  let maxSerial = 0;
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const name = String(files.next().getName() || '').trim();
+    const match = name.match(pattern);
+    if (!match) continue;
+    const serial = parseInt(match[1], 10);
+    if (!isNaN(serial) && serial > maxSerial) maxSerial = serial;
+  }
+  const nextSerial = maxSerial + 1;
+  const serialText = nextSerial < 100 ? ('0' + nextSerial).slice(-2) : String(nextSerial);
+  return prefix + '-' + dateKey + '-' + serialText;
+}
+
+/**
+ * 置換文件所有區塊（正文/頁首/頁尾）的 {{佔位符}}，支援前後空白寫法。
+ * 完全保留佔位符原本的字型/大小/顏色。
+ *
+ * @param {Document} doc
+ * @param {Object} tokenMap - { 佔位符名稱: 置換值 }
+ */
+function replaceTemplateTokens_(doc, tokenMap) {
+  const sections = [doc.getBody(), doc.getHeader(), doc.getFooter()].filter(Boolean);
+  Object.keys(tokenMap || {}).forEach(function (key) {
+    const pattern = '\\{\\{\\s*' + escapeRegExp_(key) + '\\s*\\}\\}';
+    sections.forEach(function (section) {
+      section.replaceText(pattern, String(tokenMap[key]));
+    });
+  });
 }
 
 /**
