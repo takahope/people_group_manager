@@ -495,6 +495,14 @@ const Components = (() => {
       zoomAt(state.scale * factor, rect.width / 2, rect.height / 2);
     };
 
+    // 把視口高度延伸到視窗底部：高 = 視窗高 − 視口距頂端距離 − 邊距
+    const BOTTOM_MARGIN = 16;
+    const fitHeight = () => {
+      const top = viewport.getBoundingClientRect().top;
+      const h = window.innerHeight - top - BOTTOM_MARGIN;
+      if (h > 240) viewport.style.height = h + 'px';
+    };
+
     // 適合畫面：量測畫布在 scale=1 下的自然尺寸，縮放置中塞滿視口
     const fit = () => {
       const vw = viewport.clientWidth;
@@ -598,7 +606,17 @@ const Components = (() => {
     controls.appendChild(mkBtn('⤢ 適合畫面', '縮放至全部可見', fit));
     viewport.appendChild(controls);
 
-    viewport.__fit = fit;
+    // 先延伸高度到視窗底部，再做適合畫面（初次於 paintOrg 的 rAF 內呼叫）
+    const fitAll = () => { fitHeight(); fit(); };
+
+    // 視窗縮放時重算高度與適合畫面；元素已從 DOM 移除（重繪）時自我移除監聽，避免外洩
+    const onResize = () => {
+      if (!viewport.isConnected) { window.removeEventListener('resize', onResize); return; }
+      fitAll();
+    };
+    window.addEventListener('resize', onResize);
+
+    viewport.__fit = fitAll;
     return viewport;
   }
 
