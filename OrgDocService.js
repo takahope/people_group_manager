@@ -43,6 +43,14 @@ const ISMS_TEMPLATE_SECTIONS = [
 /** 範本字型（標楷體），填值後套用以保留範本字型。 */
 const ISMS_DOC_FONT = 'DFKai-SB';
 
+/** 除錯日誌開關：true 時於生成流程輸出資料與表格結構至 Logger（排查完可改回 false）。 */
+const ISMS_DEBUG = true;
+
+/** 受 ISMS_DEBUG 控制的日誌輸出。 */
+function ismsLog_(msg) {
+  if (ISMS_DEBUG) Logger.log('[ISMS] ' + msg);
+}
+
 // =============================================
 // 資料蒐集
 // =============================================
@@ -104,6 +112,14 @@ function buildIsmsOrgMemberData_() {
     }
 
     result[section.key] = slot;
+
+    // 除錯：印出此區塊用 orgCode 抓到的節點與成員樣態
+    ismsLog_('區塊 ' + section.key + ' / orgCode=' + section.orgCode +
+      ' nodeFound=' + (!!node) + (node ? ' nodeCode=' + node.code + ' nodeName=' + node.name : '') +
+      ' convener=' + (slot.convener && slot.convener.name) +
+      ' ciso=' + (slot.ciso && slot.ciso.name) +
+      ' leader=' + (slot.leader && slot.leader.name) +
+      ' members=' + JSON.stringify((slot.members || []).map(function (m) { return (m.roleTitle || '') + ':' + (m.name || ''); })));
   });
 
   return result;
@@ -268,6 +284,21 @@ function replaceTemplateTokens_(doc, tokenMap) {
  * @param {Object} sectionsByKey
  */
 function fillIsmsTable_(table, sectionsByKey) {
+  // 除錯：印出範本表格每列結構（cells / 是否被判為標題 / 順序對應區塊 / 文字比對 / 第0欄文字）
+  if (ISMS_DEBUG) {
+    ismsLog_('表格列數=' + table.getNumRows());
+    let dbgIdx = -1;
+    for (let r = 0; r < table.getNumRows(); r++) {
+      const dr = table.getRow(r);
+      const col0 = dr.getCell(0).getText().trim();
+      const isH = isSectionHeaderRow_(dr, r);
+      if (isH) dbgIdx++;
+      const mapped = isH && dbgIdx < ISMS_TEMPLATE_SECTIONS.length ? ISMS_TEMPLATE_SECTIONS[dbgIdx].key : '';
+      ismsLog_('R' + r + ' cells=' + dr.getNumCells() + ' header=' + isH +
+        ' 順序對應=' + mapped + ' matchKey=' + matchSectionKey_(col0) + ' col0=' + JSON.stringify(col0));
+    }
+  }
+
   // ── 第一輪：掃描各區塊的「組員」列數，計算需補幾列 ──
   // 區塊標題列「依出現順序」對應 ISMS_TEMPLATE_SECTIONS，不靠中文標題文字反查，
   // 避免某區塊標題文字對不上導致區塊路由斷裂、內容外溢到下一區。
