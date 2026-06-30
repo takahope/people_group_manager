@@ -424,18 +424,29 @@ function fillIsmsRow_(row, person, setRole) {
 }
 
 /**
- * 是否為「區塊標題列」。先用文字命中 matchSectionKey_；對不上時，
- * 退而求其次以「合併成單一儲存格的列」判定（範本群組標題列即如此），
- * 讓區塊路由不受個別標題中文文字落差影響。
+ * 範本中固定出現的「資料/欄位標籤」（這些列不是區塊標題列）。
+ */
+const ISMS_ROW_LABELS = ['職務', '職稱', '姓名', '電話', '手機', '電子郵件', '召集人', '組長', '組員'];
+
+/**
+ * 是否為「區塊標題列」。判定策略（穩健、不依賴脆弱的中文字串比對）：
+ *   1) 文字命中 matchSectionKey_（committee/sec/pims/audit 走這條）；
+ *   2) 否則「排除已知資料標籤」：第 0 欄為非空文字、且不是固定資料標籤、
+ *      也不是「資安長兼資料保護長」資料列 → 視為區塊標題列。
+ * 第 2 條讓即使某區塊標題（如緊急應變）因隱形字元/異體字對不上文字，仍能被認出。
  *
  * @param {TableRow} row
  * @param {number} rowIndex
  * @returns {boolean}
  */
 function isSectionHeaderRow_(row, rowIndex) {
+  if (rowIndex === 0) return false;                       // 欄位標題列（職務/職稱/…）
   const col0 = row.getCell(0).getText().trim();
+  if (!col0) return false;
   if (matchSectionKey_(col0)) return true;
-  return rowIndex > 0 && row.getNumCells() <= 1 && col0 !== '';
+  if (ISMS_ROW_LABELS.indexOf(col0) >= 0) return false;  // 召集人/組長/組員 等資料列
+  if (/資訊安全長|資料保護長/.test(col0)) return false;   // 資安長兼資料保護長（資料列）
+  return true;                                            // 其餘非空文字 → 區塊標題列
 }
 
 /**
