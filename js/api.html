@@ -20,13 +20,30 @@ const API = (() => {
    * @returns {Promise<*>}
    */
   function callGAS(fnName, ...args) {
+    return invokeGAS(fnName, DEFAULT_TIMEOUT_MS, args);
+  }
+
+  /**
+   * 同 callGAS，但可指定逾時毫秒數。
+   * 用於文件生成等長時間操作（冷啟動可能 >15s）；一般快速讀取請用 callGAS。
+   *
+   * @param {string} fnName
+   * @param {number} timeoutMs
+   * @param {...*}   args
+   * @returns {Promise<*>}
+   */
+  function callGASWithTimeout(fnName, timeoutMs, ...args) {
+    return invokeGAS(fnName, timeoutMs, args);
+  }
+
+  function invokeGAS(fnName, timeoutMs, args) {
     return new Promise((resolve, reject) => {
       let settled = false;
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
-        reject(new Error(`${fnName} timeout after ${DEFAULT_TIMEOUT_MS}ms`));
-      }, DEFAULT_TIMEOUT_MS);
+        reject(new Error(`${fnName} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       const runner = google.script.run
         .withSuccessHandler(raw => {
@@ -108,6 +125,7 @@ const API = (() => {
 
   return {
     callGAS,
+    callGASWithTimeout,
     withLoading,
     handleError,
 

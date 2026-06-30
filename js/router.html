@@ -1872,8 +1872,9 @@ const Pages = {
       const tpl = templates.find(t => t.id === (selected && selected.value)) || templates[0];
       if (!tpl) return false;
       try {
-        Components.showToast('正在生成文件，請稍候…', 'info');
-        const result = await API.callGAS(tpl.apiFn);
+        Components.showToast('正在生成文件，請稍候…（冷啟動可能需 30 秒以上）', 'info');
+        // 文件生成屬長時間操作，冷啟動易超過預設 15s，改用 120s 逾時
+        const result = await API.callGASWithTimeout(tpl.apiFn, 120000);
         Components.showToast('文件已生成：' + (result?.fileName || ''), 'success');
         if (result?.url) {
           const win = window.open(result.url, '_blank');
