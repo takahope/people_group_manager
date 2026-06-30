@@ -392,6 +392,13 @@ function validatePersonObj(personObj) {
   if (!PERSONNEL_STATUSES.has(personObj.status)) {
     return '員工狀態必須為在勤、育嬰假、休假、留職停薪、合作單位、委外廠商、外派人員或倫理委員會';
   }
+  // 電話／手機為選填；若有填寫，長度上限 30 字
+  if (personObj.phone && String(personObj.phone).length > 30) {
+    return '電話長度不可超過 30 字元';
+  }
+  if (personObj.mobile && String(personObj.mobile).length > 30) {
+    return '手機長度不可超過 30 字元';
+  }
   return null;
 }
 

@@ -1,7 +1,31 @@
 /**
  * OrgAPI.gs — 組織架構 API
- * 職責：組織樹查詢、駐站管理員清單、垂直兼任識別、組織節點 CRUD
+ * 職責：組織樹查詢、駐站管理員清單、垂直兼任識別、組織節點 CRUD、組織成員表列印
  */
+
+// =============================================
+// 組織成員表列印
+// =============================================
+
+/**
+ * 生成「資訊安全暨個人資料管理組織成員表」Google Doc。
+ *
+ * 依範本（Script Properties 設定）+ 後端組織/職務/人員資料，於 Drive 產生填好的 Doc，
+ * 回傳檔案連結供前端開啟。實際邏輯委派給 OrgDocService。
+ *
+ * @returns {string} JSON 回應 { url, fileId, fileName }
+ */
+function generateIsmsOrgMemberDoc() {
+  if (!checkPermission('org.print')) return errorResponse('無列印組織成員表的權限');
+  try {
+    const data = OrgDocService.buildIsmsOrgMemberData();
+    const result = OrgDocService.renderToDoc(data);
+    DataService.appendAuditLog('PRINT', '組織成員表', result.fileName);
+    return successResponse(result);
+  } catch (error) {
+    return errorResponse('生成文件失敗：' + error.message);
+  }
+}
 
 // =============================================
 // 組織架構樹查詢

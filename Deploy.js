@@ -23,11 +23,13 @@
 const SHEET_SCHEMA = [
   {
     name: '人員主檔',
-    headers: ['信箱', '姓名', '員工狀態'],
+    headers: ['信箱', '姓名', '員工狀態', '電話', '手機'],
     notes:   [
       'Primary Key：全系統唯一，格式須符合 email 規範',
       '員工中文全名',
       '限定值：在勤／育嬰假／休假／留職停薪／合作單位／委外廠商／外派人員／倫理委員會',
+      '市話／分機（選填）',
+      '行動電話（選填）',
     ],
     headerColor: '#1a73e8',
   },
@@ -238,13 +240,14 @@ function migratePersonnelStatusAndAssetRoles() {
       }
     }
 
-    return [email, name, PERSONNEL_STATUSES.has(thirdCol) ? thirdCol : '在勤'];
+    // 補上「電話 / 手機」兩個空欄（舊資料無此資訊，留空待維護）
+    return [email, name, PERSONNEL_STATUSES.has(thirdCol) ? thirdCol : '在勤', '', ''];
   });
 
   personnelSheet.clearContents();
-  personnelSheet.getRange(1, 1, 1, 3).setValues([['信箱', '姓名', '員工狀態']]);
+  personnelSheet.getRange(1, 1, 1, 5).setValues([['信箱', '姓名', '員工狀態', '電話', '手機']]);
   if (migratedPersonnelRows.length > 0) {
-    personnelSheet.getRange(2, 1, migratedPersonnelRows.length, 3).setValues(migratedPersonnelRows);
+    personnelSheet.getRange(2, 1, migratedPersonnelRows.length, 5).setValues(migratedPersonnelRows);
   }
   if (roleRowsToAppend.length > 0) {
     appendToSheet_('RACI角色對照表', roleRowsToAppend);
@@ -358,19 +361,19 @@ function applyHeaderRow_(sheet, schema) {
  */
 function injectPersonnel_() {
   const data = [
-    // [信箱,              姓名,         員工狀態]
-    ['e001@example.org',        '王代表',         '在勤'],
-    ['e002@example.org',        '李執行長',       '在勤'],
-    ['e003@example.org',        '張生醫部長',     '在勤'],
-    ['e004@example.org',        '陳資訊部長',     '在勤'],
-    ['e005@example.org',        '林行政部長',     '在勤'],
-    ['e006@example.org',        '小明',           '在勤'],
-    ['e007@example.org',        '小華',           '育嬰假'],
-    ['e008@example.org',        '何人資',         '在勤'],
-    ['e009@example.org',        '周稽核',         '在勤'],
-    ['e010@example.org',        '吳組長',         '休假'],
-    ['e011@example.org',        '鄭專員',         '留職停薪'],
-    ['ext.vendor@example.org',  '廠商窗口',       '在勤'],
+    // [信箱,              姓名,         員工狀態,   電話,            手機]
+    ['e001@example.org',        '王代表',         '在勤',     '02-1234-0001',  '0911-000-001'],
+    ['e002@example.org',        '李執行長',       '在勤',     '02-1234-0002',  '0911-000-002'],
+    ['e003@example.org',        '張生醫部長',     '在勤',     '02-1234-0003',  '0911-000-003'],
+    ['e004@example.org',        '陳資訊部長',     '在勤',     '02-1234-0004',  '0911-000-004'],
+    ['e005@example.org',        '林行政部長',     '在勤',     '02-1234-0005',  '0911-000-005'],
+    ['e006@example.org',        '小明',           '在勤',     '02-1234-0006',  '0911-000-006'],
+    ['e007@example.org',        '小華',           '育嬰假',   '02-1234-0007',  '0911-000-007'],
+    ['e008@example.org',        '何人資',         '在勤',     '02-1234-0008',  '0911-000-008'],
+    ['e009@example.org',        '周稽核',         '在勤',     '02-1234-0009',  '0911-000-009'],
+    ['e010@example.org',        '吳組長',         '休假',     '02-1234-0010',  '0911-000-010'],
+    ['e011@example.org',        '鄭專員',         '留職停薪', '02-1234-0011',  '0911-000-011'],
+    ['ext.vendor@example.org',  '廠商窗口',       '在勤',     '',              ''],
   ];
   appendToSheet_('人員主檔', data);
   Logger.log('[inject] 人員主檔：' + data.length + ' 筆');

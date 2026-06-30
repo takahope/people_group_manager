@@ -259,6 +259,7 @@ const PERMISSION_MAP = {
   'personnel.delete':      new Set([ROLES.ADMIN]),
   'org.read':              new Set([ROLES.ADMIN, ROLES.HR, ROLES.MGR, ROLES.AUDITOR, ROLES.STAFF]),
   'org.write':             new Set([ROLES.ADMIN, ROLES.HR]),
+  'org.print':             new Set([ROLES.ADMIN, ROLES.HR]),
   'assignment.read.all':   new Set([ROLES.ADMIN, ROLES.HR, ROLES.AUDITOR]),
   'assignment.write':      new Set([ROLES.ADMIN, ROLES.HR]),
   'raci.read':             new Set([ROLES.ADMIN, ROLES.HR, ROLES.MGR, ROLES.AUDITOR, ROLES.STAFF, ROLES.EXTERNAL]),

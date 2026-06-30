@@ -892,6 +892,14 @@ const Pages = {
             <option value="${status}" ${person.status === status || (!person.status && status === '在勤') ? 'selected' : ''}>${status}</option>
           `).join('')}
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">電話</label>
+        <input type="text" class="form-control" id="pPhone" value="${Components.escapeHtml(person.phone || '')}" maxlength="30" placeholder="市話／分機（選填）">
+      </div>
+      <div class="form-group">
+        <label class="form-label">手機</label>
+        <input type="text" class="form-control" id="pMobile" value="${Components.escapeHtml(person.mobile || '')}" maxlength="30" placeholder="行動電話（選填）">
       </div>`;
   },
 
@@ -969,6 +977,8 @@ const Pages = {
       email: person.email,
       name: person.name,
       status: person.status,
+      phone: person.phone,
+      mobile: person.mobile,
     };
     prefetchState.byEmail.set(normalizedEmail, cachedPayload);
   },
@@ -980,6 +990,8 @@ const Pages = {
       email: existingPerson?.email || '',
       name: existingPerson?.name || '',
       status: existingPerson?.status || '在勤',
+      phone: existingPerson?.phone || '',
+      mobile: existingPerson?.mobile || '',
     };
 
     Components.showModal(isEdit ? '編輯人員' : '新增人員', Pages._renderPersonFormBody(formDraft, isEdit), async () => {
@@ -987,6 +999,8 @@ const Pages = {
         email:  document.getElementById('pEmail').value.trim(),
         name:   document.getElementById('pName').value.trim(),
         status: document.getElementById('pStatus').value,
+        phone:  document.getElementById('pPhone').value.trim(),
+        mobile: document.getElementById('pMobile').value.trim(),
       };
       const progress = Pages._createProgressController({
         message: isEdit ? '儲存人員資料中...' : '新增人員資料中...',
@@ -1829,18 +1843,70 @@ const Pages = {
   // ========================
   // 組織架構樹
   // ========================
+
+  // 可列印的組織成員表模板（可擴充：未來新增其他類別只需在此加一筆＋對應後端 API）
+  ORG_PRINT_TEMPLATES: [
+    { id: 'isms', label: '資訊安全暨個人資料管理組織成員表', apiFn: 'generateIsmsOrgMemberDoc' },
+  ],
+
+  // 列印模板選擇 → 呼叫後端生成 Google Doc → 開啟連結
+  _showOrgPrintModal() {
+    const templates = Pages.ORG_PRINT_TEMPLATES || [];
+    if (!templates.length) {
+      Components.showToast('目前沒有可用的列印模板', 'warning');
+      return;
+    }
+
+    const body = `
+      <p style="margin:0 0 .75rem;color:var(--color-text-sub)">選擇要列印的組織成員表模板，系統將依後端資料生成 Google Doc：</p>
+      <div style="display:flex;flex-direction:column;gap:.5rem">
+        ${templates.map((t, i) => `
+          <label style="display:flex;gap:.5rem;align-items:center;cursor:pointer;padding:.5rem .75rem;border:1px solid var(--color-border);border-radius:var(--radius-sm)">
+            <input type="radio" name="orgPrintTpl" value="${Components.escapeHtml(t.id)}" ${i === 0 ? 'checked' : ''}>
+            <span>${Components.escapeHtml(t.label)}</span>
+          </label>`).join('')}
+      </div>`;
+
+    Components.showModal('🖨 列印組織成員表', body, async () => {
+      const selected = document.querySelector('input[name="orgPrintTpl"]:checked');
+      const tpl = templates.find(t => t.id === (selected && selected.value)) || templates[0];
+      if (!tpl) return false;
+      try {
+        Components.showToast('正在生成文件，請稍候…', 'info');
+        const result = await API.callGAS(tpl.apiFn);
+        Components.showToast('文件已生成：' + (result?.fileName || ''), 'success');
+        if (result?.url) {
+          const win = window.open(result.url, '_blank');
+          if (!win) Components.showToast('已生成，但瀏覽器擋下新分頁；請至輸出資料夾查看', 'warning');
+        }
+      } catch (err) {
+        API.handleError(err);
+        return false; // 失敗時保留 Modal 供重試
+      }
+    }, '生成', { closeBeforeConfirm: false });
+  },
+
   async loadOrg(container, user, pageCtx) {
+    const canPrint = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     container.innerHTML = `
       <div class="page-header"><h1>🌳 組織架構</h1></div>
       <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div style="display:flex;gap:.5rem;flex-wrap:wrap" id="orgTypeTabs"></div>
-        <div style="display:flex;gap:.25rem" id="orgViewToggle">
-          <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
-          <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          ${canPrint ? '<button class="btn btn--ghost btn--sm" id="orgPrintBtn">🖨 列印組織成員表</button>' : ''}
+          <div style="display:flex;gap:.25rem" id="orgViewToggle">
+            <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
+            <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
+          </div>
         </div>
       </div>
       <div id="orgWarnings"></div>
       <div id="orgTreeContainer" class="card"></div>`;
+
+    if (canPrint) {
+      const printBtn = pageCtx.query('#orgPrintBtn');
+      if (printBtn) printBtn.addEventListener('click', () => Pages._showOrgPrintModal());
+    }
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
     const orgView = { mode: 'list', type: null, result: null };

@@ -59,6 +59,8 @@ function rowToPersonnel(row) {
     email:  row[COL.PERSONNEL.EMAIL],
     name:   row[COL.PERSONNEL.NAME],
     status: normalizePersonnelStatus(row[COL.PERSONNEL.STATUS]),
+    phone:  row[COL.PERSONNEL.PHONE] || '',
+    mobile: row[COL.PERSONNEL.MOBILE] || '',
   };
 }
 
@@ -287,6 +289,8 @@ function appendPersonnel(personObj) {
     personObj.email,
     personObj.name,
     normalizePersonnelStatus(personObj.status),
+    personObj.phone || '',
+    personObj.mobile || '',
   ]);
 }
 
@@ -309,6 +313,8 @@ function updatePersonnelByEmail(email, personObj) {
       personObj.email,
       personObj.name,
       normalizePersonnelStatus(personObj.status),
+      personObj.phone || '',
+      personObj.mobile || '',
     ]]);
     return true;
   }
