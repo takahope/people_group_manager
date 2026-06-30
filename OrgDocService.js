@@ -83,9 +83,8 @@ function buildIsmsOrgMemberData_() {
       };
 
       if (section.kind === 'committee') {
-        slot.convener = pick(function (e) { return /召集人/.test(e.roleTitle); })
-                     || pick(function (e) { return e.email && e.email === managerEmail; })
-                     || personFromManager_(node);
+        // 委員會純用 TF-ISPI-COMM 的 E 欄比對（不套管理人後備，避免搶人導致資安長列空白）
+        slot.convener = pick(function (e) { return /召集人/.test(e.roleTitle); });
         slot.ciso = pick(function (e) { return /資訊安全長/.test(e.roleTitle) || /資料保護長/.test(e.roleTitle); });
       } else {
         slot.leader = pick(function (e) { return /組長/.test(e.roleTitle); })
@@ -357,6 +356,44 @@ function fillIsmsTable_(table, sectionsByKey) {
       memberIdx++;
     }
   }
+
+  // ── 委員會：把召集人/資安長以外的其餘成員，逐筆插入為新列（職務＝該人 E 欄）──
+  const committee = sectionsByKey.committee;
+  if (committee && committee.members && committee.members.length) {
+    appendCommitteeMembers_(table, committee.members);
+  }
+}
+
+/**
+ * 在委員會區塊末端插入「其他委員會成員」列：職務欄填該人 E 欄職稱，其餘 5 欄填資料。
+ * 在填值走訪完成後呼叫，避免與既有列的標籤比對衝突。
+ *
+ * @param {Table} table
+ * @param {Array<Object>} members - 每筆 { roleTitle, title, name, phone, mobile, email }
+ */
+function appendCommitteeMembers_(table, members) {
+  // 委員會標題列位置
+  let headerIdx = -1;
+  for (let r = 0; r < table.getNumRows(); r++) {
+    if (matchSectionKey_(table.getRow(r).getCell(0).getText().trim()) === 'committee') { headerIdx = r; break; }
+  }
+  if (headerIdx < 0) return;
+
+  // 委員會區塊結束位置（下一個區塊標題列，或表尾）
+  let endIdx = table.getNumRows();
+  for (let r = headerIdx + 1; r < table.getNumRows(); r++) {
+    if (matchSectionKey_(table.getRow(r).getCell(0).getText().trim())) { endIdx = r; break; }
+  }
+  if (endIdx - 1 <= headerIdx) return;          // 無資料列可當格式範本
+
+  const templateRow = table.getRow(endIdx - 1); // 委員會最後一筆資料列（資安長列）作為格式範本
+  members.forEach(function (m, i) {
+    const newRow = table.insertTableRow(endIdx + i, templateRow.copy());
+    const c0 = newRow.getCell(0).editAsText();  // 職務欄＝該人 E 欄職稱
+    c0.setText(m.roleTitle || '');
+    if (m.roleTitle) c0.setFontFamily(ISMS_DOC_FONT);
+    fillIsmsRow_(newRow, m);                     // 職稱/姓名/電話/手機/Email
+  });
 }
 
 /**
