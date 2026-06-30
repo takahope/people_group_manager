@@ -30,12 +30,14 @@ const ISMS_RECORD_PREFIX_DEFAULT = 'TWHB-ISMSPIMS-004-002';
  * kind=committee：委員會（召集人 + 資訊安全長兼任資料保護長）
  * kind=group   ：執行/稽核/應變小組（組長 + 組員 N）
  */
+// orgCode：用「組別代碼」直接查組織節點（最穩，避開中文名稱比對落差）。
+// matchNames：僅供「範本群組標題列（中文固定文字）→ 區塊」比對使用。
 const ISMS_TEMPLATE_SECTIONS = [
-  { key: 'committee', kind: 'committee', matchNames: ['資訊安全暨個人資料保護管理委員會', '資訊安全暨個人資料管理委員會', '資安個資管理委員會'] },
-  { key: 'sec',       kind: 'group',     matchNames: ['資訊安全執行小組', '資安執行小組'] },
-  { key: 'pims',      kind: 'group',     matchNames: ['個人資料管理執行小組', '個資管理執行小組'] },
-  { key: 'audit',     kind: 'group',     matchNames: ['內部稽核執行小組'] },
-  { key: 'emergency', kind: 'group',     matchNames: ['緊急應變處理小組'] },
+  { key: 'committee', kind: 'committee', orgCode: 'TF-ISPI-COMM',      matchNames: ['資訊安全暨個人資料保護管理委員會', '資訊安全暨個人資料管理委員會', '資安個資管理委員會'] },
+  { key: 'sec',       kind: 'group',     orgCode: 'TF-ISPI-GRP-SEC',   matchNames: ['資訊安全執行小組', '資安執行小組'] },
+  { key: 'pims',      kind: 'group',     orgCode: 'TF-ISPI-GRP-PIMS',  matchNames: ['個人資料管理執行小組', '個資管理執行小組'] },
+  { key: 'audit',     kind: 'group',     orgCode: 'TF-ISPI-GRP-AUDIT', matchNames: ['內部稽核執行小組'] },
+  { key: 'emergency', kind: 'group',     orgCode: 'TF-ISPI-GRP-EMER',  matchNames: ['緊急應變處理小組'] },
 ];
 
 /** 範本字型（標楷體），填值後套用以保留範本字型。 */
@@ -53,19 +55,28 @@ const ISMS_DOC_FONT = 'DFKai-SB';
  *   { title, name, phone, mobile, email } 或 null。
  */
 function buildIsmsOrgMemberData_() {
-  const allOrg = DataService.getSheet2Data();   // 全部組織節點
+  // 三張表各預載一次、全部改記憶體查表（避免每人整表讀取造成生成時間暴增）
+  const personByEmail = {};
+  DataService.getSheet1Data().forEach(function (p) { personByEmail[p.email] = p; });
+  const orgByCode = {};
+  DataService.getSheet2Data().forEach(function (o) { orgByCode[o.code] = o; });
+  const assignsByEmail = {};
+  const allAssign = DataService.getAllAssignments();
+  allAssign.forEach(function (a) { (assignsByEmail[a.email] = assignsByEmail[a.email] || []).push(a); });
+  const ctx = { personByEmail: personByEmail, orgByCode: orgByCode, assignsByEmail: assignsByEmail };
+
   const result = {};
 
   ISMS_TEMPLATE_SECTIONS.forEach(function (section) {
-    const node = findOrgNodeByNames_(allOrg, section.matchNames);
+    const node = orgByCode[section.orgCode];   // 用組別代碼直接查節點（記憶體）
     const slot = { convener: null, ciso: null, leader: null, members: [] };
 
     if (node) {
-      const enriched = DataService.getSheet3DataByOrgCode(node.code).map(function (a) {
-        const person = DataService.findPersonByEmail(a.email) || {};
+      const enriched = allAssign.filter(function (a) { return a.orgCode === node.code; }).map(function (a) {
+        const person = ctx.personByEmail[a.email] || {};
         return {
-          roleTitle: a.title || '',                            // 該區塊 E 欄職稱 → 用於 WHO 比對
-          title:     resolveDisplayTitle_(a.email, a.title),   // 顯示「職稱」(行政層級最高 D/E，退回 E)
+          roleTitle: a.title || '',                                // 該區塊 E 欄職稱 → 用於 WHO 比對
+          title:     resolveDisplayTitle_(a.email, a.title, ctx),  // 顯示「職稱」(行政層級最高 D/E，退回 E)
           name:      a.name || person.name || '',
           email:     a.email || '',
           phone:     person.phone || '',
@@ -114,15 +125,16 @@ function isAdminOrgType_(type) {
  *
  * @param {string} email
  * @param {string} fallbackTitle
+ * @param {{ assignsByEmail: Object, orgByCode: Object }} ctx - 預載索引（記憶體查表）
  * @returns {string}
  */
-function resolveDisplayTitle_(email, fallbackTitle) {
-  const assigns = DataService.getSheet3DataByEmail(email) || [];
+function resolveDisplayTitle_(email, fallbackTitle, ctx) {
+  const assigns = (ctx && ctx.assignsByEmail[email]) || [];
   let best = null;
   let bestLevel = Infinity;
   let bestIsLeader = false;
   assigns.forEach(function (a) {
-    const node = DataService.findOrgByCode(a.orgCode);
+    const node = ctx.orgByCode[a.orgCode];
     if (!node || !isAdminOrgType_(node.type)) return;
     const lvl = Number(node.level);
     if (isNaN(lvl)) return;
@@ -137,25 +149,6 @@ function resolveDisplayTitle_(email, fallbackTitle) {
     return (dept && dept !== title) ? (dept + '/' + title) : title;
   }
   return fallbackTitle || '';
-}
-
-/**
- * 依名稱清單比對組織節點（先精確比對 name/alias，再退而求其次用包含關係）。
- *
- * @param {Array} allOrg
- * @param {Array<string>} matchNames
- * @returns {Object|null}
- */
-function findOrgNodeByNames_(allOrg, matchNames) {
-  const exact = allOrg.find(function (o) {
-    return matchNames.indexOf(o.name) >= 0 || (o.alias && matchNames.indexOf(o.alias) >= 0);
-  });
-  if (exact) return exact;
-  return allOrg.find(function (o) {
-    return matchNames.some(function (n) {
-      return (o.name && o.name.indexOf(n) >= 0) || (n.indexOf(o.name) >= 0 && o.name);
-    });
-  }) || null;
 }
 
 // =============================================
@@ -276,17 +269,19 @@ function replaceTemplateTokens_(doc, tokenMap) {
  */
 function fillIsmsTable_(table, sectionsByKey) {
   // ── 第一輪：掃描各區塊的「組員」列數，計算需補幾列 ──
-  // 群組標題列以「文字命中區塊名稱」判定，避免依賴匯入後的合併儲存格表示法。
+  // 區塊標題列「依出現順序」對應 ISMS_TEMPLATE_SECTIONS，不靠中文標題文字反查，
+  // 避免某區塊標題文字對不上導致區塊路由斷裂、內容外溢到下一區。
   const memberRowsByKey = {};
+  let scanIdx = -1;
   let curKey = null;
   for (let r = 0; r < table.getNumRows(); r++) {
-    const label = table.getRow(r).getCell(0).getText().trim();
-    const headerKey = matchSectionKey_(label);
-    if (headerKey) {
-      curKey = headerKey;
+    const row = table.getRow(r);
+    if (isSectionHeaderRow_(row, r)) {
+      scanIdx++;
+      curKey = scanIdx < ISMS_TEMPLATE_SECTIONS.length ? ISMS_TEMPLATE_SECTIONS[scanIdx].key : null;
       continue;
     }
-    if (curKey && label === '組員') {
+    if (curKey && row.getCell(0).getText().trim() === '組員') {
       (memberRowsByKey[curKey] = memberRowsByKey[curKey] || []).push(r);
     }
   }
@@ -308,21 +303,22 @@ function fillIsmsTable_(table, sectionsByKey) {
     }
   });
 
-  // ── 第二輪：填值 ──
+  // ── 第二輪：填值（同樣依出現順序對應區塊）──
+  let fillIdx = -1;
   let key = null;
   let memberIdx = 0;
   for (let r = 0; r < table.getNumRows(); r++) {
     const row = table.getRow(r);
-    const label = row.getCell(0).getText().trim();
-    const headerKey = matchSectionKey_(label);
-    if (headerKey) {
-      key = headerKey;
+    if (isSectionHeaderRow_(row, r)) {
+      fillIdx++;
+      key = fillIdx < ISMS_TEMPLATE_SECTIONS.length ? ISMS_TEMPLATE_SECTIONS[fillIdx].key : null;
       memberIdx = 0;
       continue;
     }
     const sec = key && sectionsByKey[key];
     if (!sec) continue;
 
+    const label = row.getCell(0).getText().trim();
     if (label === '召集人') {
       fillIsmsRow_(row, sec.convener);
     } else if (label.indexOf('資訊安全長') >= 0 || label.indexOf('資料保護長') >= 0) {
@@ -350,18 +346,15 @@ function fillIsmsTable_(table, sectionsByKey) {
  * @param {Array<Object>} members - 每筆 { roleTitle, title, name, phone, mobile, email }
  */
 function appendCommitteeMembers_(table, members) {
-  // 委員會標題列位置
+  // 委員會＝第 1 個標題列；其結束位置＝第 2 個標題列（下一區）。依順序偵測，不靠文字。
   let headerIdx = -1;
+  let endIdx = table.getNumRows();
   for (let r = 0; r < table.getNumRows(); r++) {
-    if (matchSectionKey_(table.getRow(r).getCell(0).getText().trim()) === 'committee') { headerIdx = r; break; }
+    if (!isSectionHeaderRow_(table.getRow(r), r)) continue;
+    if (headerIdx < 0) { headerIdx = r; }
+    else { endIdx = r; break; }
   }
   if (headerIdx < 0) return;
-
-  // 委員會區塊結束位置（下一個區塊標題列，或表尾）
-  let endIdx = table.getNumRows();
-  for (let r = headerIdx + 1; r < table.getNumRows(); r++) {
-    if (matchSectionKey_(table.getRow(r).getCell(0).getText().trim())) { endIdx = r; break; }
-  }
   if (endIdx - 1 <= headerIdx) return;          // 無資料列可當格式範本
 
   const templateRow = table.getRow(endIdx - 1); // 委員會最後一筆資料列（資安長列）作為格式範本
@@ -397,6 +390,21 @@ function fillIsmsRow_(row, person, setRole) {
     text.setText(values[c - 1]);
     if (values[c - 1]) text.setFontFamily(ISMS_DOC_FONT);
   }
+}
+
+/**
+ * 是否為「區塊標題列」。先用文字命中 matchSectionKey_；對不上時，
+ * 退而求其次以「合併成單一儲存格的列」判定（範本群組標題列即如此），
+ * 讓區塊路由不受個別標題中文文字落差影響。
+ *
+ * @param {TableRow} row
+ * @param {number} rowIndex
+ * @returns {boolean}
+ */
+function isSectionHeaderRow_(row, rowIndex) {
+  const col0 = row.getCell(0).getText().trim();
+  if (matchSectionKey_(col0)) return true;
+  return rowIndex > 0 && row.getNumCells() <= 1 && col0 !== '';
 }
 
 /**
@@ -441,6 +449,43 @@ function diagnoseIsmsDocConfig() {
     if (k !== k.trim() || /[　]/.test(k)) {
       Logger.log('[疑似異常鍵] 原始=' + JSON.stringify(k) + '（含前後空白或全形空白）');
     }
+  });
+  Logger.log('================================================');
+}
+
+/**
+ * 診斷範本表格結構與各區塊抓到的資料。
+ * 用法：於 Apps Script 編輯器選 diagnoseIsmsDocTemplate → Run，看「執行記錄」。
+ * 逐列印出 [列索引, getNumCells, 是否被判為標題列, matchSectionKey 結果, 第0欄文字]，
+ * 以及各區塊（依 orgCode）找到的節點與成員，便於定位區塊路由/資料問題。
+ */
+function diagnoseIsmsDocTemplate() {
+  Logger.log('========== [ISMS Doc Template Diagnose] ==========');
+  const props = PropertiesService.getScriptProperties();
+  const templateId = (props.getProperty(ISMS_DOC_PROPS.TEMPLATE_ID) || '').trim();
+  if (!templateId) { Logger.log('未設定範本 Doc ID'); return; }
+
+  const tables = DocumentApp.openById(templateId).getBody().getTables();
+  if (!tables.length) { Logger.log('範本中找不到表格'); return; }
+  const table = tables[0];
+  let idx = -1;
+  for (let r = 0; r < table.getNumRows(); r++) {
+    const row = table.getRow(r);
+    const col0 = row.getCell(0).getText().trim();
+    const isHeader = isSectionHeaderRow_(row, r);
+    if (isHeader) idx++;
+    const mappedKey = isHeader && idx < ISMS_TEMPLATE_SECTIONS.length ? ISMS_TEMPLATE_SECTIONS[idx].key : '';
+    Logger.log('R' + r + ' cells=' + row.getNumCells() + ' header=' + isHeader +
+      ' 順序對應=' + mappedKey + ' matchKey=' + matchSectionKey_(col0) + ' col0=' + JSON.stringify(col0));
+  }
+
+  const data = buildIsmsOrgMemberData_();
+  ISMS_TEMPLATE_SECTIONS.forEach(function (s) {
+    const slot = data[s.key] || {};
+    const members = (slot.members || []).map(function (m) { return (m.roleTitle || '') + ':' + (m.name || ''); });
+    Logger.log('[' + s.key + '/' + s.orgCode + '] convener=' + (slot.convener && slot.convener.name) +
+      ' ciso=' + (slot.ciso && slot.ciso.name) + ' leader=' + (slot.leader && slot.leader.name) +
+      ' members=' + JSON.stringify(members));
   });
   Logger.log('================================================');
 }
