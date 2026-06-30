@@ -143,11 +143,16 @@ function resolveDisplayTitle_(email, fallbackTitle) {
   const assigns = DataService.getSheet3DataByEmail(email) || [];
   let best = null;
   let bestLevel = Infinity;
+  let bestIsLeader = false;
   assigns.forEach(function (a) {
     const node = DataService.findOrgByCode(a.orgCode);
     if (!node || !isAdminOrgType_(node.type)) return;
     const lvl = Number(node.level);
-    if (!isNaN(lvl) && lvl < bestLevel) { bestLevel = lvl; best = a; }
+    if (isNaN(lvl)) return;
+    const isLeader = /組長|副組長/.test(a.title || '');   // 同組別多列時，組長/副組長優先
+    if (lvl < bestLevel || (lvl === bestLevel && isLeader && !bestIsLeader)) {
+      best = a; bestLevel = lvl; bestIsLeader = isLeader;
+    }
   });
   if (best) {
     const dept = best.orgName || '';   // D 所屬組別
