@@ -43,8 +43,8 @@ const ISMS_TEMPLATE_SECTIONS = [
 /** 範本字型（標楷體），填值後套用以保留範本字型。 */
 const ISMS_DOC_FONT = 'DFKai-SB';
 
-/** 除錯日誌開關：true 時於生成流程輸出資料與表格結構至 Logger（排查完可改回 false）。 */
-const ISMS_DEBUG = true;
+/** 除錯日誌開關：true 時於生成流程輸出資料與表格結構至 Logger（排查時改回 true）。 */
+const ISMS_DEBUG = false;
 
 /** 受 ISMS_DEBUG 控制的日誌輸出。 */
 function ismsLog_(msg) {
