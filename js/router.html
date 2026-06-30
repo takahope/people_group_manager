@@ -2057,7 +2057,9 @@ const Pages = {
       const opts = { onNodeClick: openOrgMemberModal };
       if (orgView.mode === 'chart') {
         treeDiv.classList.add('card--flush');
-        treeDiv.appendChild(Components.OrgChart(tree, opts));
+        const viewer = Components.OrgPanZoom(Components.OrgChart(tree, opts));
+        treeDiv.appendChild(viewer);
+        requestAnimationFrame(() => { if (viewer.__fit) viewer.__fit(); }); // 初次自動適合畫面
       } else {
         treeDiv.classList.remove('card--flush');
         tree.forEach(node => treeDiv.appendChild(Components.OrgNode(node, 0, opts)));

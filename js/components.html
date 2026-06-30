@@ -450,6 +450,156 @@ const Components = (() => {
     return li;
   }
 
+  /**
+   * 把一張 OrgChart 包進「視口 + 畫布」縮放平移檢視器。
+   * 對畫布整體套單一 transform（translate + scale），既有 CSS 連接線會等比縮放、不錯位。
+   * 提供：角落工具列（+ / − / 歸位 / 適合畫面）、滾輪縮放（以游標為中心）、拖曳平移。
+   *
+   * 回傳的 viewport 元素掛有 `__fit()` handle；初次「適合畫面」需在元素入 DOM 後於
+   * requestAnimationFrame 內呼叫（否則量不到尺寸）。
+   *
+   * @param {HTMLElement} chartEl - Components.OrgChart(...) 的輸出（.org-chart）
+   * @returns {HTMLElement} .org-viewport（含 __fit handle）
+   */
+  function OrgPanZoom(chartEl) {
+    const MIN_SCALE = 0.2;
+    const MAX_SCALE = 2;
+    const DRAG_THRESHOLD = 5; // px：超過才算拖曳，否則放行 click（不誤觸節點）
+
+    const viewport = document.createElement('div');
+    viewport.className = 'org-viewport';
+
+    const canvas = document.createElement('div');
+    canvas.className = 'org-canvas';
+    canvas.appendChild(chartEl);
+    viewport.appendChild(canvas);
+
+    const state = { scale: 1, tx: 0, ty: 0 };
+    const clamp = (s) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+    const apply = () => {
+      canvas.style.transform =
+        'translate(' + state.tx + 'px, ' + state.ty + 'px) scale(' + state.scale + ')';
+    };
+
+    // 以視口內某點 (px, py) 為中心縮放：縮放後該點底下的內容維持不動
+    const zoomAt = (nextScale, px, py) => {
+      const ns = clamp(nextScale);
+      state.tx = px - (px - state.tx) * (ns / state.scale);
+      state.ty = py - (py - state.ty) * (ns / state.scale);
+      state.scale = ns;
+      apply();
+    };
+
+    const zoomByCenter = (factor) => {
+      const rect = viewport.getBoundingClientRect();
+      zoomAt(state.scale * factor, rect.width / 2, rect.height / 2);
+    };
+
+    // 適合畫面：量測畫布在 scale=1 下的自然尺寸，縮放置中塞滿視口
+    const fit = () => {
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const cw = chartEl.scrollWidth;
+      const ch = chartEl.scrollHeight;
+      if (!vw || !vh || !cw || !ch) return;
+      const pad = 24;
+      const scale = clamp(Math.min((vw - pad) / cw, (vh - pad) / ch, 1));
+      state.scale = scale;
+      state.tx = (vw - cw * scale) / 2;
+      state.ty = Math.max(pad / 2, (vh - ch * scale) / 2);
+      apply();
+    };
+
+    const reset = () => {
+      const vw = viewport.clientWidth;
+      const cw = chartEl.scrollWidth;
+      state.scale = 1;
+      state.tx = Math.max(0, (vw - cw) / 2);
+      state.ty = 12;
+      apply();
+    };
+
+    // 滾輪縮放（以游標為中心）
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      zoomAt(state.scale * factor, e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+
+    // 拖曳平移（pointer 事件 + 移動門檻）
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0, startTx = 0, startTy = 0;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      startTx = state.tx;
+      startTy = state.ty;
+      canvas.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) {
+        moved = true;
+        canvas.classList.add('dragging');
+      }
+      if (moved) {
+        state.tx = startTx + dx;
+        state.ty = startTy + dy;
+        apply();
+      }
+    });
+
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      canvas.classList.remove('dragging');
+      if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+    };
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+
+    // 曾拖曳時吞掉接續的 click，避免誤觸節點開 modal
+    canvas.addEventListener('click', (e) => {
+      if (moved) {
+        e.stopPropagation();
+        e.preventDefault();
+        moved = false;
+      }
+    }, true);
+
+    // 角落工具列
+    const controls = document.createElement('div');
+    controls.className = 'org-zoom-controls';
+    const mkBtn = (label, title, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn--ghost btn--sm org-zoom-btn';
+      b.textContent = label;
+      b.title = title;
+      b.onclick = onClick;
+      return b;
+    };
+    controls.appendChild(mkBtn('＋', '放大', () => zoomByCenter(1.2)));
+    controls.appendChild(mkBtn('－', '縮小', () => zoomByCenter(1 / 1.2)));
+    controls.appendChild(mkBtn('100%', '歸位', reset));
+    controls.appendChild(mkBtn('⤢ 適合畫面', '縮放至全部可見', fit));
+    viewport.appendChild(controls);
+
+    viewport.__fit = fit;
+    return viewport;
+  }
+
   // =============================================
   // 人員卡片（PersonCard）
   // =============================================
@@ -810,6 +960,7 @@ const Components = (() => {
     DataTable,
     OrgNode,
     OrgChart,
+    OrgPanZoom,
     renderOrgMemberListModal,
     renderPersonnelAssignmentModal,
     PersonCard,

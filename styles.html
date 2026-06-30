@@ -1832,6 +1832,38 @@ ul, ol { list-style: none; }
 }
 .org-chart__mgr { font-size: .72rem; color: var(--color-text-sub); }
 
+/* 組織圖縮放平移檢視器（OrgPanZoom） */
+.org-viewport {
+  position: relative;
+  height: clamp(420px, 70vh, 760px);
+  overflow: hidden;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+.org-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
+  cursor: grab;
+  display: inline-block;
+  touch-action: none; /* 讓 pointer 拖曳不被瀏覽器手勢攔截 */
+}
+.org-canvas.dragging { cursor: grabbing; }
+.org-viewport .org-chart { overflow: visible; padding-top: .75rem; } /* 在視口內由 transform 控制，不再需要自身捲動 */
+.org-zoom-controls {
+  position: absolute;
+  right: .75rem;
+  bottom: .75rem;
+  display: flex;
+  gap: .35rem;
+  z-index: 2;
+}
+.org-zoom-btn {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  min-width: 2.25rem;
+}
+
 /* =============================================
    組織成員清單
    ============================================= */
