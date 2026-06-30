@@ -61,7 +61,6 @@ function buildIsmsOrgMemberData_() {
     const slot = { convener: null, ciso: null, leader: null, members: [] };
 
     if (node) {
-      const managerEmail = node.managerEmail || '';
       const enriched = DataService.getSheet3DataByOrgCode(node.code).map(function (a) {
         const person = DataService.findPersonByEmail(a.email) || {};
         return {
@@ -87,9 +86,8 @@ function buildIsmsOrgMemberData_() {
         slot.convener = pick(function (e) { return /召集人/.test(e.roleTitle); });
         slot.ciso = pick(function (e) { return /資訊安全長/.test(e.roleTitle) || /資料保護長/.test(e.roleTitle); });
       } else {
-        slot.leader = pick(function (e) { return /組長/.test(e.roleTitle); })
-                   || pick(function (e) { return e.email && e.email === managerEmail; })
-                   || personFromManager_(node);
+        // 小組純用 E 欄比對組長（不套管理人後備）
+        slot.leader = pick(function (e) { return /組長/.test(e.roleTitle); });
       }
       slot.members = enriched.filter(function (e, i) { return !used[i]; });
     }
@@ -98,26 +96,6 @@ function buildIsmsOrgMemberData_() {
   });
 
   return result;
-}
-
-/**
- * 由組織節點的「管理人員」建立成員資料（當管理人在該單位無職務配置列時的後備）。
- * 職稱欄取其第一筆職務配置的職稱；電話/手機取自人員主檔。
- *
- * @param {Object} node
- * @returns {Object|null} { title, name, phone, mobile, email }
- */
-function personFromManager_(node) {
-  if (!node || !node.managerEmail) return null;
-  const person = DataService.findPersonByEmail(node.managerEmail) || {};
-  return {
-    roleTitle: '',                                              // 管理人不必然在該區塊有職務配置
-    title:  resolveDisplayTitle_(node.managerEmail, ''),        // 行政層級最高 D/E（無則留空）
-    name:   node.managerName || person.name || '',
-    email:  node.managerEmail,
-    phone:  person.phone || '',
-    mobile: person.mobile || '',
-  };
 }
 
 /**
@@ -350,9 +328,9 @@ function fillIsmsTable_(table, sectionsByKey) {
     } else if (label.indexOf('資訊安全長') >= 0 || label.indexOf('資料保護長') >= 0) {
       fillIsmsRow_(row, sec.ciso);
     } else if (label === '組長') {
-      fillIsmsRow_(row, sec.leader);
+      fillIsmsRow_(row, sec.leader, true);          // 小組職務欄改填實際 E 值
     } else if (label === '組員') {
-      fillIsmsRow_(row, sec.members[memberIdx]);
+      fillIsmsRow_(row, sec.members[memberIdx], true);
       memberIdx++;
     }
   }
@@ -389,21 +367,26 @@ function appendCommitteeMembers_(table, members) {
   const templateRow = table.getRow(endIdx - 1); // 委員會最後一筆資料列（資安長列）作為格式範本
   members.forEach(function (m, i) {
     const newRow = table.insertTableRow(endIdx + i, templateRow.copy());
-    const c0 = newRow.getCell(0).editAsText();  // 職務欄＝該人 E 欄職稱
-    c0.setText(m.roleTitle || '');
-    if (m.roleTitle) c0.setFontFamily(ISMS_DOC_FONT);
-    fillIsmsRow_(newRow, m);                     // 職稱/姓名/電話/手機/Email
+    fillIsmsRow_(newRow, m, true);                // 職務(E)＋職稱/姓名/電話/手機/Email
   });
 }
 
 /**
  * 把一筆成員資料填入該列的「職稱/姓名/電話/手機/電子郵件」（cell 1~5）。
  * person 為 null/undefined 時留空。
+ * setRole 為 true 且有 person 時，職務欄（cell 0）改填該人 E 欄職稱（roleTitle）。
  *
  * @param {TableRow} row
- * @param {Object|null} person - { title, name, phone, mobile, email }
+ * @param {Object|null} person - { roleTitle, title, name, phone, mobile, email }
+ * @param {boolean} [setRole] - 是否把職務欄改填實際 E 值
  */
-function fillIsmsRow_(row, person) {
+function fillIsmsRow_(row, person, setRole) {
+  if (setRole && person) {
+    const c0 = row.getCell(0).editAsText();
+    c0.setText(person.roleTitle || '');
+    if (person.roleTitle) c0.setFontFamily(ISMS_DOC_FONT);
+  }
+
   const values = person
     ? [person.title || '', person.name || '', person.phone || '', person.mobile || '', person.email || '']
     : ['', '', '', '', ''];
