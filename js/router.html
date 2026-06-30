@@ -2155,6 +2155,7 @@ const Pages = {
     Pages._syncStationGroupState();
     const filteredGroups = Pages._getFilteredStationGroups();
     const totalMembers = state.stations.reduce((sum, station) => sum + (station.memberCount || 0), 0);
+    const totalActiveMembers = state.stations.reduce((sum, station) => sum + (station.activeMemberCount || 0), 0);
     const flaggedStations = state.stations.filter(station => (station.warnings || []).length > 0).length;
 
     workspace.innerHTML = `
@@ -2166,6 +2167,10 @@ const Pages = {
         <div class="stat-card">
           <div class="stat-card__label">收案人員</div>
           <div class="stat-card__value">${totalMembers}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card__label">收案人員(在勤)</div>
+          <div class="stat-card__value">${totalActiveMembers}</div>
         </div>
         <div class="stat-card">
           <div class="stat-card__label">可編輯權限</div>

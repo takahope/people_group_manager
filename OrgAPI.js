@@ -111,7 +111,7 @@ function getStationManagementDashboard() {
         label: `${person.name} (${person.email})`,
       }));
 
-    const stations = stationNodes.map(node => buildStationWorkspaceCard_(node, allAssignments));
+    const stations = stationNodes.map(node => buildStationWorkspaceCard_(node, allAssignments, allPersonnel));
     const warnings = buildStationWorkspaceWarnings_(stations);
 
     return successResponse({
@@ -296,7 +296,7 @@ function isStationOrgCode_(orgCode) {
   return String(orgCode || '').trim().toUpperCase().startsWith('GRP-CO-');
 }
 
-function buildStationWorkspaceCard_(stationNode, allAssignments) {
+function buildStationWorkspaceCard_(stationNode, allAssignments, allPersonnel = []) {
   const manager = stationNode.managerEmail
     ? DataService.findPersonByEmail(stationNode.managerEmail)
     : null;
@@ -315,6 +315,11 @@ function buildStationWorkspaceCard_(stationNode, allAssignments) {
     warnings.push('目前沒有配置任何收案人員');
   }
 
+  const activeMemberCount = members.filter(item => {
+    const person = allPersonnel.find(p => p.email === item.email);
+    return person && person.status === '在勤';
+  }).length;
+
   return {
     code: stationNode.code,
     name: stationNode.name,
@@ -326,6 +331,7 @@ function buildStationWorkspaceCard_(stationNode, allAssignments) {
       ? `${stationNode.managerName || (manager ? manager.name : stationNode.managerEmail)} (${stationNode.managerEmail})`
       : '',
     memberCount: members.length,
+    activeMemberCount: activeMemberCount,
     isManagerConcurrent: stationNode.managerEmail
       ? getStationManagerConcurrency_(stationNode.managerEmail, allAssignments)
       : false,
