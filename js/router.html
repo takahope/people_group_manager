@@ -1888,7 +1888,7 @@ const Pages = {
   },
 
   // 匯出組織圖：選一個節點 → 把該節點以下子樹截成 PNG 下載（純前端 html2canvas）
-  _showOrgExportModal(nodes) {
+  _showOrgExportModal(nodes, defaultStartCode = null, defaultDepth = 'all') {
     const roots = Array.isArray(nodes) ? nodes : [];
     if (roots.length === 0) {
       Components.showToast('無組織資料可匯出', 'warning');
@@ -1907,7 +1907,8 @@ const Pages = {
     const options = flat.map((item, i) => {
       const indent = '　'.repeat(item.depth);
       const label = indent + item.node.code + ' ' + (item.node.name || '');
-      return `<option value="${Components.escapeHtml(item.node.code)}" ${i === 0 ? 'selected' : ''}>${Components.escapeHtml(label)}</option>`;
+      const isSelected = defaultStartCode ? (item.node.code === defaultStartCode) : (i === 0);
+      return `<option value="${Components.escapeHtml(item.node.code)}" ${isSelected ? 'selected' : ''}>${Components.escapeHtml(label)}</option>`;
     }).join('');
 
     const body = `
@@ -1919,12 +1920,12 @@ const Pages = {
         <div>
           <label for="orgExportDepthSel" style="display:block;margin-bottom:.25rem;font-size:.85rem;color:var(--color-text-sub)">向下延伸層數</label>
           <select id="orgExportDepthSel" class="form-control" style="width:100%">
-            <option value="all" selected>全部（完整子樹）</option>
-            <option value="1">1 層（僅直屬子節點）</option>
-            <option value="2">2 層</option>
-            <option value="3">3 層</option>
-            <option value="4">4 層</option>
-            <option value="5">5 層</option>
+            <option value="all" ${defaultDepth === 'all' ? 'selected' : ''}>全部（完整子樹）</option>
+            <option value="1" ${defaultDepth === '1' ? 'selected' : ''}>1 層（僅直屬子節點）</option>
+            <option value="2" ${defaultDepth === '2' ? 'selected' : ''}>2 層</option>
+            <option value="3" ${defaultDepth === '3' ? 'selected' : ''}>3 層</option>
+            <option value="4" ${defaultDepth === '4' ? 'selected' : ''}>4 層</option>
+            <option value="5" ${defaultDepth === '5' ? 'selected' : ''}>5 層</option>
           </select>
         </div>
       </div>`;
@@ -1957,7 +1958,7 @@ const Pages = {
     const canPrint = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     container.innerHTML = `
       <div class="page-header"><h1>🌳 組織架構</h1></div>
-      <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="display:flex;gap:1rem;margin-bottom:.75rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div style="display:flex;gap:.5rem;flex-wrap:wrap" id="orgTypeTabs"></div>
         <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           ${canPrint ? '<button class="btn btn--ghost btn--sm" id="orgPrintBtn">🖨 列印組織成員表</button>' : ''}
@@ -1966,6 +1967,23 @@ const Pages = {
             <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
             <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
           </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center;padding:.6rem .85rem;background:var(--color-bg-alt);border-radius:8px;border:1px solid var(--color-border)">
+        <div style="display:flex;align-items:center;gap:.5rem;flex:1;min-width:220px">
+          <label for="orgViewNodeSel" style="font-size:.85rem;color:var(--color-text-sub);white-space:nowrap">起始節點：</label>
+          <select id="orgViewNodeSel" class="form-control" style="flex:1;max-width:320px;padding:.3rem .6rem;font-size:.85rem"></select>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <label for="orgViewDepthSel" style="font-size:.85rem;color:var(--color-text-sub);white-space:nowrap">向下顯示層數：</label>
+          <select id="orgViewDepthSel" class="form-control" style="width:auto;padding:.3rem .6rem;font-size:.85rem">
+            <option value="all" selected>全部層數（完整子樹）</option>
+            <option value="1">1 層（僅直屬子節點）</option>
+            <option value="2">2 層</option>
+            <option value="3">3 層</option>
+            <option value="4">4 層</option>
+            <option value="5">5 層</option>
+          </select>
         </div>
       </div>
       <div id="orgWarnings"></div>
@@ -1979,11 +1997,11 @@ const Pages = {
     const exportBtn = pageCtx.query('#orgExportBtn');
     if (exportBtn) {
       exportBtn.addEventListener('click', () =>
-        Pages._showOrgExportModal(orgView.result?.nodes || []));
+        Pages._showOrgExportModal(orgView.result?.nodes || [], orgView.startCode, orgView.depth));
     }
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
-    const orgView = { mode: 'list', type: null, result: null };
+    const orgView = { mode: 'list', type: null, startCode: '', depth: 'all', result: null };
 
     let activeMemberRequestId = 0;
     const prefetchState = Pages._orgMemberPrefetchState = {
@@ -2103,6 +2121,27 @@ const Pages = {
       ).join('');
     };
 
+    // 依目前類別與選取層級過濾更新下拉選單
+    const renderNodeSelect = () => {
+      const nodeSel = pageCtx.query('#orgViewNodeSel');
+      if (!nodeSel) return;
+      const rawNodes = Array.isArray(orgView.result?.nodes) ? orgView.result.nodes : [];
+      const flat = [];
+      const walk = (node, depth) => {
+        flat.push({ node, depth });
+        (node.children || []).forEach(child => walk(child, depth + 1));
+      };
+      rawNodes.forEach(root => walk(root, 0));
+
+      const options = flat.map(item => {
+        const indent = '　'.repeat(item.depth);
+        const label = indent + item.node.code + ' ' + (item.node.name || '');
+        const selected = item.node.code === orgView.startCode ? 'selected' : '';
+        return `<option value="${Components.escapeHtml(item.node.code)}" ${selected}>${Components.escapeHtml(label)}</option>`;
+      });
+      nodeSel.innerHTML = `<option value="">全部（當前類別完整架構）</option>` + options.join('');
+    };
+
     // 依目前檢視模式（清單／組織圖）渲染已快取的查詢結果，不重打 API
     const paintOrg = () => {
       if (!pageCtx.isActive()) return;
@@ -2111,7 +2150,7 @@ const Pages = {
       if (!treeDiv) return;
 
       const result = orgView.result;
-      const tree = Array.isArray(result?.nodes) ? result.nodes : [];
+      const rawNodes = Array.isArray(result?.nodes) ? result.nodes : [];
       const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
 
       if (warningDiv) {
@@ -2125,7 +2164,28 @@ const Pages = {
       }
 
       treeDiv.innerHTML = '';
-      if (tree.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
+      if (rawNodes.length === 0) { treeDiv.innerHTML = '<div class="empty-state"><p>無組織資料</p></div>'; return; }
+
+      // 1. 依起始節點過濾
+      let baseNodes = rawNodes;
+      if (orgView.startCode) {
+        const findNode = (list, code) => {
+          for (const item of list) {
+            if (item.code === code) return item;
+            if (item.children && item.children.length > 0) {
+              const found = findNode(item.children, code);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        const target = findNode(rawNodes, orgView.startCode);
+        if (target) baseNodes = [target];
+      }
+
+      // 2. 依向下顯示層數裁剪子樹
+      const maxDepth = orgView.depth === 'all' ? Infinity : Number(orgView.depth);
+      const tree = maxDepth === Infinity ? baseNodes : baseNodes.map(node => Components.pruneTreeByDepth(node, maxDepth));
 
       const opts = { onNodeClick: openOrgMemberModal };
       if (orgView.mode === 'chart') {
@@ -2144,12 +2204,14 @@ const Pages = {
       const treeDiv = pageCtx.query('#orgTreeContainer');
       if (!treeDiv) return;
       orgView.type = type || null;
+      orgView.startCode = ''; // 切換組織類別時重置起始節點
       treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
       try {
         const result = await API.getOrgTree(type || null);
         if (!pageCtx.isActive()) return;
         orgView.result = result;
         renderTypeTabs(result?.availableTypes);
+        renderNodeSelect();
         paintOrg();
       } catch (err) {
         if (!pageCtx.isActive()) return;
@@ -2175,6 +2237,24 @@ const Pages = {
         const btn = e.target.closest('button');
         if (!btn) return;
         await renderTree(btn.dataset.type || null);
+      });
+    }
+
+    const viewNodeSel = pageCtx.query('#orgViewNodeSel');
+    if (viewNodeSel) {
+      viewNodeSel.addEventListener('change', () => {
+        if (!pageCtx.isActive()) return;
+        orgView.startCode = viewNodeSel.value;
+        paintOrg();
+      });
+    }
+
+    const viewDepthSel = pageCtx.query('#orgViewDepthSel');
+    if (viewDepthSel) {
+      viewDepthSel.addEventListener('change', () => {
+        if (!pageCtx.isActive()) return;
+        orgView.depth = viewDepthSel.value;
+        paintOrg();
       });
     }
 
