@@ -1887,6 +1887,49 @@ const Pages = {
     }, '生成', { closeBeforeConfirm: false });
   },
 
+  // 匯出組織圖：選一個節點 → 把該節點以下子樹截成 PNG 下載（純前端 html2canvas）
+  _showOrgExportModal(nodes) {
+    const roots = Array.isArray(nodes) ? nodes : [];
+    if (roots.length === 0) {
+      Components.showToast('無組織資料可匯出', 'warning');
+      return;
+    }
+
+    // 把巢狀樹以 DFS 攤平成 { node, depth }，供下拉選單依層級縮排顯示
+    const flat = [];
+    const walk = (node, depth) => {
+      flat.push({ node, depth });
+      (node.children || []).forEach(child => walk(child, depth + 1));
+    };
+    roots.forEach(root => walk(root, 0));
+
+    const byCode = new Map(flat.map(item => [item.node.code, item.node]));
+    const options = flat.map((item, i) => {
+      const indent = '　'.repeat(item.depth);
+      const label = indent + item.node.code + ' ' + (item.node.name || '');
+      return `<option value="${Components.escapeHtml(item.node.code)}" ${i === 0 ? 'selected' : ''}>${Components.escapeHtml(label)}</option>`;
+    }).join('');
+
+    const body = `
+      <p style="margin:0 0 .75rem;color:var(--color-text-sub)">選擇一個節點，系統將把「該節點以下的組織圖」匯出為 PNG 圖片：</p>
+      <select id="orgExportNodeSel" class="form-control" style="width:100%">${options}</select>`;
+
+    Components.showModal('⬇ 匯出組織圖', body, async () => {
+      const sel = document.querySelector('#orgExportNodeSel');
+      const node = byCode.get(sel && sel.value);
+      if (!node) return false;
+      try {
+        Components.showToast('正在產生圖片，請稍候…', 'info');
+        const dateStr = new Date().toLocaleDateString('zh-TW');
+        await Components.exportOrgChartPng(node, '組織圖_' + (node.name || node.code) + '_' + dateStr + '.png');
+        Components.showToast('組織圖已匯出', 'success');
+      } catch (err) {
+        API.handleError(err);
+        return false; // 失敗時保留 Modal 供重試
+      }
+    }, '匯出', { closeBeforeConfirm: false });
+  },
+
   async loadOrg(container, user, pageCtx) {
     const canPrint = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     container.innerHTML = `
@@ -1895,6 +1938,7 @@ const Pages = {
         <div style="display:flex;gap:.5rem;flex-wrap:wrap" id="orgTypeTabs"></div>
         <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           ${canPrint ? '<button class="btn btn--ghost btn--sm" id="orgPrintBtn">🖨 列印組織成員表</button>' : ''}
+          <button class="btn btn--ghost btn--sm" id="orgExportBtn">⬇ 匯出組織圖</button>
           <div style="display:flex;gap:.25rem" id="orgViewToggle">
             <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
             <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
@@ -1907,6 +1951,12 @@ const Pages = {
     if (canPrint) {
       const printBtn = pageCtx.query('#orgPrintBtn');
       if (printBtn) printBtn.addEventListener('click', () => Pages._showOrgPrintModal());
+    }
+
+    const exportBtn = pageCtx.query('#orgExportBtn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () =>
+        Pages._showOrgExportModal(orgView.result?.nodes || []));
     }
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果

@@ -621,6 +621,92 @@ const Components = (() => {
   }
 
   // =============================================
+  // 組織圖匯出（選定節點 → 該節點以下子樹截圖為 PNG）
+  // =============================================
+
+  // html2canvas 為體積較大的外部函式庫；為避免頁面初始 include 階段就載入 CDN 阻塞
+  // GAS 的 HTML 組裝，改為「使用者點擊匯出時才動態注入」，並用模組層快取 Promise 避免重複載入。
+  const HTML2CANVAS_CDN =
+    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  let html2canvasPromise_ = null;
+
+  function ensureHtml2Canvas_() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    if (html2canvasPromise_) return html2canvasPromise_;
+    html2canvasPromise_ = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = HTML2CANVAS_CDN;
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        html2canvasPromise_ = null; // 允許稍後重試
+        reject(new Error('載入截圖元件逾時，請確認網路連線後再試'));
+      }, 15000);
+      script.onload = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (window.html2canvas) resolve(window.html2canvas);
+        else { html2canvasPromise_ = null; reject(new Error('截圖元件載入異常')); }
+      };
+      script.onerror = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        html2canvasPromise_ = null; // 允許稍後重試
+        reject(new Error('無法載入截圖元件（html2canvas）'));
+      };
+      document.head.appendChild(script);
+    });
+    return html2canvasPromise_;
+  }
+
+  /**
+   * 把某個組織節點以下的子樹渲染成 PNG 並觸發下載。
+   * 對「離屏、未縮放」的原始 .org-chart 截圖（非畫面上帶 transform 的 .org-canvas），
+   * 確保 CSS 連接線與方框以自然尺寸完整入圖。
+   *
+   * @param {Object} rootNode - 含 children 的子樹根節點
+   * @param {string} filename - 下載檔名（含 .png）
+   * @returns {Promise<void>}
+   */
+  async function exportOrgChartPng(rootNode, filename) {
+    if (!rootNode) throw new Error('未選擇要匯出的組織節點');
+    const html2canvas = await ensureHtml2Canvas_();
+
+    // 離屏舞台：用畫面外定位而非 display:none，否則 html2canvas 量不到尺寸。
+    const stage = document.createElement('div');
+    stage.style.cssText =
+      'position:fixed;left:-100000px;top:0;background:#ffffff;padding:24px;z-index:-1;';
+    const chartEl = OrgChart([rootNode]); // 不帶 onNodeClick，純供截圖
+    stage.appendChild(chartEl);
+    document.body.appendChild(stage);
+
+    try {
+      const canvas = await html2canvas(chartEl, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+      });
+      await new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) { reject(new Error('圖片產生失敗')); return; }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          URL.revokeObjectURL(url);
+          resolve();
+        }, 'image/png');
+      });
+    } finally {
+      stage.remove();
+    }
+  }
+
+  // =============================================
   // 人員卡片（PersonCard）
   // =============================================
 
@@ -981,6 +1067,7 @@ const Components = (() => {
     OrgNode,
     OrgChart,
     OrgPanZoom,
+    exportOrgChartPng,
     renderOrgMemberListModal,
     renderPersonnelAssignmentModal,
     PersonCard,
