@@ -624,42 +624,11 @@ const Components = (() => {
   // 組織圖匯出（選定節點 → 該節點以下子樹截圖為 PNG）
   // =============================================
 
-  // html2canvas 為體積較大的外部函式庫；為避免頁面初始 include 階段就載入 CDN 阻塞
-  // GAS 的 HTML 組裝，改為「使用者點擊匯出時才動態注入」，並用模組層快取 Promise 避免重複載入。
-  const HTML2CANVAS_CDN =
-    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-  let html2canvasPromise_ = null;
-
+  // html2canvas 已透過 include('js/html2canvas-lib') 內嵌載入，無需外部 CDN。
+  // 保留此 helper 以維持 exportOrgChartPng 的呼叫介面一致性。
   function ensureHtml2Canvas_() {
     if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (html2canvasPromise_) return html2canvasPromise_;
-    html2canvasPromise_ = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = HTML2CANVAS_CDN;
-      let done = false;
-      const timer = setTimeout(() => {
-        if (done) return;
-        done = true;
-        html2canvasPromise_ = null; // 允許稍後重試
-        reject(new Error('載入截圖元件逾時，請確認網路連線後再試'));
-      }, 15000);
-      script.onload = () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        if (window.html2canvas) resolve(window.html2canvas);
-        else { html2canvasPromise_ = null; reject(new Error('截圖元件載入異常')); }
-      };
-      script.onerror = () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        html2canvasPromise_ = null; // 允許稍後重試
-        reject(new Error('無法載入截圖元件（html2canvas）'));
-      };
-      document.head.appendChild(script);
-    });
-    return html2canvasPromise_;
+    return Promise.reject(new Error('html2canvas 未載入，請確認 html2canvas-lib.html 已正確 include'));
   }
 
   /**
