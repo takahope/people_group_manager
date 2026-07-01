@@ -681,7 +681,11 @@ const Components = (() => {
     // 導致方框內文字全部空白。截圖用的離屏 DOM 改用 block 流，讓文字穩定
     // 入圖（inline style 優先權高於 class，只作用於此離屏 DOM，不影響畫面上的組織圖）。
     chartEl.querySelectorAll('.org-chart__box').forEach(box => {
+      // 用 block（html2canvas 對 block 內文字量測最穩、文字必定入圖），
+      // 再以 margin:0 auto 在較寬的 li 內水平置中，方框中心才對齊連接線。
       box.style.display = 'block';
+      box.style.marginLeft = 'auto';
+      box.style.marginRight = 'auto';
       box.style.textAlign = 'center';
       Array.from(box.children).forEach(child => { child.style.display = 'block'; });
       const meta = box.querySelector('.org-chart__meta');
