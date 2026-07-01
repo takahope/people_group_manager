@@ -1770,10 +1770,6 @@ ul, ol { list-style: none; }
   left: 50%;
   border-left: 2px solid var(--color-border);
 }
-/* 唯一子節點：只留中間直線，去掉左右橫線 */
-.org-chart li:only-child::before,
-.org-chart li:only-child::after { display: none; }
-.org-chart li:only-child { padding-top: 1.25rem; }
 /* 第一個 / 最後一個子節點：修掉外側多餘的橫線 */
 .org-chart li:first-child::before,
 .org-chart li:last-child::after { border: 0 none; }
@@ -1782,6 +1778,17 @@ ul, ol { list-style: none; }
   border-radius: 0 5px 0 0;
 }
 .org-chart li:first-child::after { border-radius: 5px 0 0 0; }
+
+/* 唯一子節點：只留中間垂直直線，去掉左右分岔橫線與圓角 */
+.org-chart li:only-child::before { display: none; }
+.org-chart li:only-child::after {
+  display: block;
+  border: 0 none;
+  border-left: 2px solid var(--color-border);
+  border-radius: 0;
+}
+.org-chart li:only-child { padding-top: 1.25rem; }
+
 /* 父節點下方往子節點的垂直線 */
 .org-chart ul ul::before {
   content: '';
@@ -1796,7 +1803,13 @@ ul, ol { list-style: none; }
 .org-chart > ul { padding-top: 0; }
 .org-chart > ul > li { padding-top: 0; }
 .org-chart > ul > li::before,
-.org-chart > ul > li::after { display: none; }
+.org-chart > ul > li::after,
+.org-chart > ul > li:first-child::before,
+.org-chart > ul > li:first-child::after,
+.org-chart > ul > li:last-child::before,
+.org-chart > ul > li:last-child::after,
+.org-chart > ul > li:only-child::before,
+.org-chart > ul > li:only-child::after { display: none; }
 
 .org-chart__box {
   display: inline-flex;
