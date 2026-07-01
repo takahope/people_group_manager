@@ -82,7 +82,17 @@ function formatCellDate_(v) {
   if (v instanceof Date && !isNaN(v.getTime())) {
     return Utilities.formatDate(v, 'Asia/Taipei', 'yyyy/MM/dd');
   }
-  return String(v).trim();
+  const raw = String(v).trim();
+  if (!raw) return '';
+  // 緊湊 yyyyMMdd（如 20260101，或被 Sheets 存成數字 20260101）
+  let m = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31) {
+    return `${m[1]}/${m[2]}/${m[3]}`;
+  }
+  // 有分隔：yyyy/MM/dd、yyyy-MM-dd、yyyy.MM.dd → 補零統一
+  m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (m) return `${m[1]}/${('0' + m[2]).slice(-2)}/${('0' + m[3]).slice(-2)}`;
+  return raw;
 }
 
 // =============================================

@@ -498,6 +498,12 @@ function normalizeDateValue_(v) {
   const raw = String(v).trim();
   if (!raw) return '';
 
+  // 緊湊 yyyyMMdd（如 20260101）
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact && +compact[2] >= 1 && +compact[2] <= 12 && +compact[3] >= 1 && +compact[3] <= 31) {
+    return `${compact[1]}/${compact[2]}/${compact[3]}`;
+  }
+
   const m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
   if (m) {
     const y = m[1];
