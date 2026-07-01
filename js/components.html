@@ -667,6 +667,32 @@ const Components = (() => {
       'position:fixed;left:-100000px;top:0;background:#ffffff;padding:24px;z-index:-1;';
     const chartEl = OrgChart([rootNode]); // 不帶 onNodeClick，純供截圖
     stage.appendChild(chartEl);
+
+    // html2canvas 1.4.1 無法正確渲染 <button> 內的 inline-flex 子元素，
+    // 導致方框內文字全部空白。把截圖用的離屏 DOM 中所有 button 替換為 div。
+    chartEl.querySelectorAll('button.org-chart__box').forEach(btn => {
+      const div = document.createElement('div');
+      div.className = btn.className;
+      div.innerHTML = btn.innerHTML;
+      btn.replaceWith(div);
+    });
+
+    // html2canvas 1.4.1 對 inline-flex/flex 子元素渲染不全（文字塌陷），
+    // 導致方框內文字全部空白。截圖用的離屏 DOM 改用 block 流，讓文字穩定
+    // 入圖（inline style 優先權高於 class，只作用於此離屏 DOM，不影響畫面上的組織圖）。
+    chartEl.querySelectorAll('.org-chart__box').forEach(box => {
+      box.style.display = 'block';
+      box.style.textAlign = 'center';
+      Array.from(box.children).forEach(child => { child.style.display = 'block'; });
+      const meta = box.querySelector('.org-chart__meta');
+      if (meta) {
+        meta.style.display = 'block';
+        meta.querySelectorAll('.badge, .org-chart__mgr').forEach(el => {
+          el.style.display = 'inline-block';
+        });
+      }
+    });
+
     document.body.appendChild(stage);
 
     try {
