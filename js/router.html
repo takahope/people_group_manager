@@ -1911,17 +1911,40 @@ const Pages = {
     }).join('');
 
     const body = `
-      <p style="margin:0 0 .75rem;color:var(--color-text-sub)">選擇一個節點，系統將把「該節點以下的組織圖」匯出為 PNG 圖片：</p>
-      <select id="orgExportNodeSel" class="form-control" style="width:100%">${options}</select>`;
+      <div style="display:flex;flex-direction:column;gap:.75rem">
+        <div>
+          <label for="orgExportNodeSel" style="display:block;margin-bottom:.25rem;font-size:.85rem;color:var(--color-text-sub)">匯出根節點</label>
+          <select id="orgExportNodeSel" class="form-control" style="width:100%">${options}</select>
+        </div>
+        <div>
+          <label for="orgExportDepthSel" style="display:block;margin-bottom:.25rem;font-size:.85rem;color:var(--color-text-sub)">向下延伸層數</label>
+          <select id="orgExportDepthSel" class="form-control" style="width:100%">
+            <option value="all" selected>全部（完整子樹）</option>
+            <option value="1">1 層（僅直屬子節點）</option>
+            <option value="2">2 層</option>
+            <option value="3">3 層</option>
+            <option value="4">4 層</option>
+            <option value="5">5 層</option>
+          </select>
+        </div>
+      </div>`;
 
     Components.showModal('⬇ 匯出組織圖', body, async () => {
-      const sel = document.querySelector('#orgExportNodeSel');
-      const node = byCode.get(sel && sel.value);
+      const nodeSel = document.querySelector('#orgExportNodeSel');
+      const depthSel = document.querySelector('#orgExportDepthSel');
+      const node = byCode.get(nodeSel && nodeSel.value);
       if (!node) return false;
+
+      // 依選取的層數裁剪子樹
+      const depthVal = depthSel ? depthSel.value : 'all';
+      const maxDepth = depthVal === 'all' ? Infinity : Number(depthVal);
+      const pruned = Components.pruneTreeByDepth(node, maxDepth);
+
       try {
         Components.showToast('正在產生圖片，請稍候…', 'info');
         const dateStr = new Date().toLocaleDateString('zh-TW');
-        await Components.exportOrgChartPng(node, '組織圖_' + (node.name || node.code) + '_' + dateStr + '.png');
+        const depthLabel = depthVal === 'all' ? '' : '_' + depthVal + '層';
+        await Components.exportOrgChartPng(pruned, '組織圖_' + (node.name || node.code) + depthLabel + '_' + dateStr + '.png');
         Components.showToast('組織圖已匯出', 'success');
       } catch (err) {
         API.handleError(err);

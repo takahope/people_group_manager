@@ -632,6 +632,23 @@ const Components = (() => {
   }
 
   /**
+   * 深拷貝指定節點的子樹，並依 maxDepth 限制向下延伸的層數。
+   *
+   * @param {Object} node     - 含 children 的樹節點
+   * @param {number} maxDepth - 向下延伸層數（0 = 只有該節點，1 = 含直屬子節點，Infinity = 完整子樹）
+   * @returns {Object} 裁剪後的新節點物件（不修改原始資料）
+   */
+  function pruneTreeByDepth(node, maxDepth) {
+    const clone = Object.assign({}, node);
+    if (maxDepth <= 0 || !node.children || node.children.length === 0) {
+      clone.children = [];
+    } else {
+      clone.children = node.children.map(child => pruneTreeByDepth(child, maxDepth - 1));
+    }
+    return clone;
+  }
+
+  /**
    * 把某個組織節點以下的子樹渲染成 PNG 並觸發下載。
    * 對「離屏、未縮放」的原始 .org-chart 截圖（非畫面上帶 transform 的 .org-canvas），
    * 確保 CSS 連接線與方框以自然尺寸完整入圖。
@@ -1037,6 +1054,7 @@ const Components = (() => {
     OrgChart,
     OrgPanZoom,
     exportOrgChartPng,
+    pruneTreeByDepth,
     renderOrgMemberListModal,
     renderPersonnelAssignmentModal,
     PersonCard,
