@@ -672,8 +672,8 @@ const Pages = {
               <input type="search" id="personnelSearch" class="personnel-search__input" placeholder="搜尋姓名、信箱、狀態…">
             </div>
           </label>
-          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="importPersonBtn">⬆ 匯入</button>' : ''}
-          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬇ 匯出</button>' : ''}
+          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="importPersonBtn">⬇ 匯入</button>' : ''}
+          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬆ 匯出</button>' : ''}
           ${canWrite ? '<button class="btn btn--primary personnel-toolbar__action" id="addPersonBtn">＋ 新增人員</button>' : ''}
         </div>
       </section>
@@ -1149,6 +1149,12 @@ const Pages = {
     return ['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會', '離職'];
   },
 
+  // 「在職」衍生定義：與人員清單頁篩選 tab（loadPersonnel 的 excludedPayrollStatuses）、
+  // DashboardAPI.js 的 isActualPayrollPersonnel_ 維持同一套「在職」概念，避免各處定義不一致。
+  _activePersonnelStatuses() {
+    return ['在勤', '育嬰假', '休假', '外派人員', '留職停薪'];
+  },
+
   _personnelExportColumns() {
     return [
       { key: 'email',     label: '信箱',     checked: true, always: true },
@@ -1175,9 +1181,36 @@ const Pages = {
   },
 
   // ---------- 匯出 ----------
+  // 員工狀態勾選框綁定：「在職」為父層捷徑，勾選/取消會連動底下的個別狀態子項；
+  // 子項狀態改變時回頭更新父層的勾選／部分勾選（indeterminate）視覺。
+  // Components.showModal 為同步渲染（見 js/components.html bodyEl.innerHTML = body），
+  // 故呼叫 showModal 後立即綁定即可取得剛渲染好的 DOM。
+  _bindPersonnelExportStatusControls() {
+    const groupEl = document.getElementById('exportStatusActiveGroup');
+    const childEls = Array.from(document.querySelectorAll('.export-status-child'));
+    if (!groupEl || !childEls.length) return;
+
+    const syncGroupFromChildren = () => {
+      const checkedCount = childEls.filter(el => el.checked).length;
+      groupEl.checked = checkedCount === childEls.length;
+      groupEl.indeterminate = checkedCount > 0 && checkedCount < childEls.length;
+    };
+
+    groupEl.onchange = () => {
+      childEls.forEach(el => { el.checked = groupEl.checked; });
+      groupEl.indeterminate = false;
+    };
+    childEls.forEach(el => { el.onchange = syncGroupFromChildren; });
+
+    syncGroupFromChildren();
+  },
+
   _showPersonnelExport() {
     const columns = Pages._personnelExportColumns();
-    const statuses = Pages._personnelStatusList();
+    const allStatuses = Pages._personnelStatusList();
+    const activeSet = new Set(Pages._activePersonnelStatuses());
+    const groupedStatuses = allStatuses.filter(s => activeSet.has(s));
+    const otherStatuses = allStatuses.filter(s => !activeSet.has(s));
     const esc = Components.escapeHtml;
     const renderBody = () => `
       <div class="form-group">
@@ -1190,8 +1223,18 @@ const Pages = {
       </div>
       <div class="form-group">
         <label class="form-label">員工狀態（不勾＝全部）</label>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .75rem;margin-bottom:.6rem">
+          <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+            <input type="checkbox" id="exportStatusActiveGroup"> 在職（${esc(groupedStatuses.join('、'))}）
+          </label>
+          <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem;margin:.5rem 0 0 1.6rem">
+            ${groupedStatuses.map(s => `<label style="display:inline-flex;align-items:center;gap:.3rem">
+              <input type="checkbox" class="export-status export-status-child" value="${esc(s)}"> ${esc(s)}
+            </label>`).join('')}
+          </div>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
-          ${statuses.map(s => `<label style="display:inline-flex;align-items:center;gap:.3rem">
+          ${otherStatuses.map(s => `<label style="display:inline-flex;align-items:center;gap:.3rem">
             <input type="checkbox" class="export-status" value="${esc(s)}"> ${esc(s)}
           </label>`).join('')}
         </div>
@@ -1229,9 +1272,11 @@ const Pages = {
         API.handleError(err);
         const bodyEl = document.getElementById('modalBody');
         if (bodyEl) bodyEl.innerHTML = renderBody();
+        Pages._bindPersonnelExportStatusControls();
         return false;
       }
     }, '開始匯出', { closeBeforeConfirm: false, modalClassName: 'modal--wide' });
+    Pages._bindPersonnelExportStatusControls();
   },
 
   _downloadPersonnelFile(headers, rows, format) {
