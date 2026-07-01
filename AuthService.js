@@ -30,6 +30,9 @@ const SESSION_KEY_PREFIX = 'HR_SESSION_';
 /** @const {string} Script Properties 中 admin 白名單 key */
 const ADMIN_ROLE_EMAILS_KEY = 'ADMIN_ROLE_EMAILS';
 
+/** @const {string} Script Properties 中 HR 白名單 key */
+const HR_ROLE_EMAILS_KEY = 'HR_ROLE_EMAILS';
+
 // =============================================
 // Public API
 // =============================================
@@ -187,7 +190,7 @@ function resolveUserRole(email) {
  */
 function determineRole(email, personnel, assignments) {
   if (isAdminEmail(email))        return ROLES.ADMIN;
-  if (isHR(assignments))          return ROLES.HR;
+  if (isHR(email))                return ROLES.HR;
   if (isAuditor(assignments))     return ROLES.AUDITOR;
   if (isManager(email))           return ROLES.MGR;
   if (isExternal(email))          return ROLES.EXTERNAL;
@@ -218,10 +221,23 @@ function normalizeEmail_(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-/** 所屬組別為 GRP-ADMIN 或 GRP-PLAN → HR 人員 */
-function isHR(assignments) {
-  return assignments.some(a =>
-    a.orgCode === 'GRP-ADMIN' || a.orgCode === 'GRP-PLAN'
+/** Email 命中 Script Properties HR 白名單 → HR 人員 */
+function isHR(email) {
+  if (!email) return false;
+  return getHrRoleEmailSet_().has(normalizeEmail_(email));
+}
+
+function getHrRoleEmailSet_() {
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(HR_ROLE_EMAILS_KEY);
+
+  if (!raw) return new Set();
+
+  return new Set(
+    String(raw)
+      .split(',')
+      .map(normalizeEmail_)
+      .filter(Boolean)
   );
 }
 

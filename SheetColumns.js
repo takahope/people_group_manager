@@ -20,6 +20,7 @@ const PERSONNEL_STATUSES = new Set([
   '委外廠商',
   '外派人員',
   '倫理委員會',
+  '離職',
 ]);
 
 const COL = {

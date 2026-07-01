@@ -314,13 +314,15 @@ function findRolesByCode(roleCode) {
  */
 function personnelRowFromObj_(personObj) {
   const row = new Array(widthFromColMap(COL.PERSONNEL)).fill('');
+  const leaveDate = personObj.leaveDate || '';
   row[COL.PERSONNEL.EMAIL]      = personObj.email;
   row[COL.PERSONNEL.NAME]       = personObj.name;
-  row[COL.PERSONNEL.STATUS]     = normalizePersonnelStatus(personObj.status);
+  // 離職日期一旦有值，狀態一律強制為「離職」，覆蓋表單/匯入送入的原始狀態
+  row[COL.PERSONNEL.STATUS]     = leaveDate ? '離職' : normalizePersonnelStatus(personObj.status);
   row[COL.PERSONNEL.PHONE]      = personObj.phone || '';
   row[COL.PERSONNEL.MOBILE]     = personObj.mobile || '';
   row[COL.PERSONNEL.HIRE_DATE]  = personObj.hireDate || '';
-  row[COL.PERSONNEL.LEAVE_DATE] = personObj.leaveDate || '';
+  row[COL.PERSONNEL.LEAVE_DATE] = leaveDate;
   return row;
 }
 

@@ -228,6 +228,7 @@ function buildStatusBreakdown_(personnel) {
     委外廠商: 0,
     外派人員: 0,
     倫理委員會: 0,
+    離職: 0,
   };
 
   (personnel || []).forEach(person => {
@@ -240,7 +241,7 @@ function buildStatusBreakdown_(personnel) {
 }
 
 function isActualPayrollPersonnel_(person, representativeEmails) {
-  const excludedStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
+  const excludedStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
   if (!person) return false;
   const normalizedEmail = String(person.email || '').trim().toLowerCase();
   return !excludedStatuses.has(String(person.status || '').trim())

@@ -633,7 +633,7 @@ const Pages = {
   async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
-    const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商']);
+    const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
     const statusOptions = [
       { key: '全部', label: '全部', type: 'all' },
       { key: '在勤', label: '在勤', type: 'status' },
@@ -644,6 +644,7 @@ const Pages = {
       { key: '委外廠商', label: '委外廠商', type: 'status' },
       { key: '外派人員', label: '外派人員', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
+      { key: '離職', label: '離職', type: 'status' },
       { key: '在職', label: '在職', type: 'derived' },
     ];
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
@@ -794,6 +795,14 @@ const Pages = {
                 label: '員工狀態',
                 render: (value) => `<span class="badge ${this.statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
               },
+              { key: 'hireDate',  label: '到職日期', render: (value) => Components.escapeHtml(value || '—') },
+              { key: 'leaveDate', label: '離職日期', render: (value) => Components.escapeHtml(value || '—') },
+              {
+                key: 'tenure',
+                label: '在職時間',
+                sortable: false,
+                render: (_, row) => Components.escapeHtml(Pages._formatTenure(row.hireDate, row.leaveDate)),
+              },
               {
                 key: 'assignmentView',
                 label: '查看職務',
@@ -898,7 +907,7 @@ const Pages = {
       <div class="form-group">
         <label class="form-label required">員工狀態</label>
         <select class="form-control" id="pStatus">
-          ${['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'].map(status => `
+          ${['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會', '離職'].map(status => `
             <option value="${status}" ${person.status === status || (!person.status && status === '在勤') ? 'selected' : ''}>${status}</option>
           `).join('')}
         </select>
@@ -944,6 +953,31 @@ const Pages = {
     const s = String(raw || '').trim();
     if (!s) return '';
     return s.replace(/-/g, '/');
+  },
+
+  // 將已正規化的日期字串解析為 Date；無法解析回 null。
+  // 附加 T00:00:00 避免 new Date('yyyy-MM-dd') 被當 UTC 午夜解析，在瀏覽器所在時區產生日期偏移。
+  _parseStoredDate(raw) {
+    const iso = Pages._toDateInputValue(raw);
+    if (!iso) return null;
+    const d = new Date(`${iso}T00:00:00`);
+    return isNaN(d.getTime()) ? null : d;
+  },
+
+  // 計算在職時間，格式 "X年Y個月"。leaveDate 為空則以目前時間為終點（每次渲染即時計算）。
+  _formatTenure(hireDate, leaveDate) {
+    const start = Pages._parseStoredDate(hireDate);
+    if (!start) return '—';
+    const end = leaveDate ? Pages._parseStoredDate(leaveDate) : new Date();
+    if (!end) return '—';
+    if (end.getTime() < start.getTime()) return '—'; // 離職早於到職（壞資料）或到職日期在未來
+
+    let years = end.getFullYear() - start.getFullYear();
+    let months = end.getMonth() - start.getMonth();
+    if (end.getDate() < start.getDate()) months -= 1;
+    if (months < 0) { years -= 1; months += 12; }
+
+    return `${years}年${months}個月`;
   },
 
   // 假進度控制器。
@@ -1067,6 +1101,9 @@ const Pages = {
         hireDate:  Pages._fromDateInputValue(document.getElementById('pHireDate').value),
         leaveDate: Pages._fromDateInputValue(document.getElementById('pLeaveDate').value),
       };
+      // 離職日期一旦有值，狀態強制為離職，與後端 personnelRowFromObj_ 的規則同步，
+      // 避免存檔後樂觀更新（_upsertPersonnelState/_syncPersonnelAssignmentCache）顯示舊狀態
+      if (formDraft.leaveDate) formDraft.status = '離職';
       const progress = Pages._createProgressController({
         message: isEdit ? '儲存人員資料中...' : '新增人員資料中...',
         hint: '系統正在同步資料',
@@ -1109,7 +1146,7 @@ const Pages = {
   ],
 
   _personnelStatusList() {
-    return ['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'];
+    return ['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會', '離職'];
   },
 
   _personnelExportColumns() {
@@ -1524,6 +1561,10 @@ const Pages = {
   },
 
   _showPersonnelImportPreview(diff) {
+    // 離職日期一旦有值，狀態強制為離職，與後端 personnelRowFromObj_ 的規則同步；
+    // 在渲染預覽前先套用，避免預覽畫面顯示的狀態跟實際存檔結果不一致
+    diff.news.forEach(n => { if (n.final.leaveDate) n.final.status = '離職'; });
+    diff.fills.forEach(f => { if (f.final.leaveDate) f.final.status = '離職'; });
     const hasWork = (diff.news.length + diff.fills.length + diff.conflicts.length) > 0;
     Components.showModal('匯入預覽', Pages._renderImportPreview(diff), async () => {
       const records = [];
@@ -1536,8 +1577,9 @@ const Pages = {
         cf.fillFields.forEach(f => { final[f.key] = f.newVal; });
         if (decision === 'overwrite') {
           cf.conflictFields.forEach(f => { final[f.key] = f.newVal; });
-          records.push(final);
-        } else if (cf.fillFields.length) {
+        }
+        if (final.leaveDate) final.status = '離職';
+        if (decision === 'overwrite' || cf.fillFields.length) {
           records.push(final);
         }
       });
