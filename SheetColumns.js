@@ -27,8 +27,10 @@ const COL = {
     EMAIL: 0,
     NAME: 1,
     STATUS: 2,
-    PHONE: 3,   // 電話（附加於尾欄，避免位移既有資料）
-    MOBILE: 4,  // 手機
+    PHONE: 3,       // 電話（附加於尾欄，避免位移既有資料）
+    MOBILE: 4,      // 手機
+    HIRE_DATE: 5,   // 到職日期（附加於尾欄，免遷移）
+    LEAVE_DATE: 6,  // 離職日期（附加於尾欄，免遷移）
   },
   ORG: {
     TYPE: 0,

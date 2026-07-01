@@ -61,11 +61,28 @@ function rowToPersonnel(row) {
     status: normalizePersonnelStatus(row[COL.PERSONNEL.STATUS]),
     phone:  row[COL.PERSONNEL.PHONE] || '',
     mobile: row[COL.PERSONNEL.MOBILE] || '',
+    hireDate:  formatCellDate_(row[COL.PERSONNEL.HIRE_DATE]),
+    leaveDate: formatCellDate_(row[COL.PERSONNEL.LEAVE_DATE]),
   };
 }
 
 function normalizePersonnelStatus(rawStatus) {
   return PERSONNEL_STATUSES.has(rawStatus) ? rawStatus : '在勤';
+}
+
+/**
+ * 將 Sheet 日期儲存格值轉為字串（避免直接回傳 Date 物件被序列化成 null）。
+ * Date → 'yyyy/MM/dd'；字串/數字 → 去頭尾空白後原樣；空 → ''。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function formatCellDate_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, 'Asia/Taipei', 'yyyy/MM/dd');
+  }
+  return String(v).trim();
 }
 
 // =============================================
@@ -279,24 +296,37 @@ function findRolesByCode(roleCode) {
 // =============================================
 
 /**
+ * 將人員物件轉為 Sheet 1 的一整列陣列（欄寬固定為 widthFromColMap(COL.PERSONNEL)）。
+ * append 與 update 共用，避免新增欄位時兩處漏改而位移。
+ *
+ * @param {Object} personObj
+ * @returns {Array}
+ */
+function personnelRowFromObj_(personObj) {
+  const row = new Array(widthFromColMap(COL.PERSONNEL)).fill('');
+  row[COL.PERSONNEL.EMAIL]      = personObj.email;
+  row[COL.PERSONNEL.NAME]       = personObj.name;
+  row[COL.PERSONNEL.STATUS]     = normalizePersonnelStatus(personObj.status);
+  row[COL.PERSONNEL.PHONE]      = personObj.phone || '';
+  row[COL.PERSONNEL.MOBILE]     = personObj.mobile || '';
+  row[COL.PERSONNEL.HIRE_DATE]  = personObj.hireDate || '';
+  row[COL.PERSONNEL.LEAVE_DATE] = personObj.leaveDate || '';
+  return row;
+}
+
+/**
  * 新增人員至 Sheet 1
- * 
- * @param {{email, name, status}} personObj
+ *
+ * @param {{email, name, status, phone, mobile, hireDate, leaveDate}} personObj
  */
 function appendPersonnel(personObj) {
   const sheet = getSheet(SHEET_NAMES.PERSONNEL);
-  sheet.appendRow([
-    personObj.email,
-    personObj.name,
-    normalizePersonnelStatus(personObj.status),
-    personObj.phone || '',
-    personObj.mobile || '',
-  ]);
+  sheet.appendRow(personnelRowFromObj_(personObj));
 }
 
 /**
  * 更新 Sheet 1 中指定 Email 的人員資料
- * 
+ *
  * @param {string} email
  * @param {Object} personObj
  * @returns {boolean} 是否找到並更新
@@ -309,16 +339,68 @@ function updatePersonnelByEmail(email, personObj) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][COL.PERSONNEL.EMAIL] !== email) continue;
     const rowNum = i + 1;
-    sheet.getRange(rowNum, 1, 1, widthFromColMap(COL.PERSONNEL)).setValues([[
-      personObj.email,
-      personObj.name,
-      normalizePersonnelStatus(personObj.status),
-      personObj.phone || '',
-      personObj.mobile || '',
-    ]]);
+    sheet.getRange(rowNum, 1, 1, widthFromColMap(COL.PERSONNEL))
+      .setValues([personnelRowFromObj_(personObj)]);
     return true;
   }
   return false;
+}
+
+/**
+ * 批次匯入人員：單次讀取整表建索引，就地更新既有列、收集新列，最後一次寫回。
+ * 避免逐筆 appendPersonnel/updatePersonnelByEmail 造成 N 次整表讀寫。
+ *
+ * @param {Array<{email, name, status, phone, mobile, hireDate, leaveDate}>} records
+ *   前端已解析衝突後的「最終」人員物件（每筆代表該信箱的完整目標值）。
+ * @returns {{added:number, updated:number}}
+ */
+function bulkImportPersonnel(records) {
+  const list = Array.isArray(records) ? records : [];
+  if (!list.length) return { added: 0, updated: 0 };
+
+  const sheet = getSheet(SHEET_NAMES.PERSONNEL);
+  const width = widthFromColMap(COL.PERSONNEL);
+  const data = sheet.getDataRange().getValues();
+
+  // email(lowercased) → 資料列索引（含標題，故 >=1）
+  const indexByEmail = {};
+  for (let i = 1; i < data.length; i++) {
+    const key = String(data[i][COL.PERSONNEL.EMAIL] || '').trim().toLowerCase();
+    if (key) indexByEmail[key] = i;
+  }
+
+  let updated = 0;
+  const newRows = [];
+  list.forEach(rec => {
+    const key = String(rec.email || '').trim().toLowerCase();
+    if (!key) return;
+    const rowArr = personnelRowFromObj_(rec);
+    if (indexByEmail.hasOwnProperty(key)) {
+      data[indexByEmail[key]] = rowArr;
+      updated++;
+    } else {
+      newRows.push(rowArr);
+    }
+  });
+
+  // 一次寫回既有區塊（含未變動列，內容不變）
+  if (data.length > 1) {
+    sheet.getRange(2, 1, data.length - 1, width)
+      .setValues(data.slice(1).map(r => padRowWidth_(r, width)));
+  }
+  // 追加新列
+  if (newRows.length) {
+    sheet.getRange(data.length + 1, 1, newRows.length, width).setValues(newRows);
+  }
+  SpreadsheetApp.flush();
+  return { added: newRows.length, updated };
+}
+
+/** 將列補齊/裁切到指定寬度，避免既有舊列（5 欄）與新寬度（7 欄）不符導致 setValues 出錯。 */
+function padRowWidth_(row, width) {
+  const out = (row || []).slice(0, width);
+  while (out.length < width) out.push('');
+  return out;
 }
 
 /**
@@ -521,6 +603,7 @@ const DataService = {
   appendPersonnel,
   updatePersonnelByEmail,
   deletePersonnelByEmail,
+  bulkImportPersonnel,
   appendAssignment,
   updateAssignmentByRow,
   deleteAssignmentByRow,

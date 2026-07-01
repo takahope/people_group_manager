@@ -77,6 +77,8 @@ const Components = (() => {
     cancelBtn.textContent = cancelText;
     cancelBtn.disabled = false;
     closeBtn.disabled = false;
+    // cloneNode(true) 會連 disabled 狀態一起複製；先還原避免沿用上一個流程的 disabled
+    confirmBtn.disabled = false;
 
     // 清除先前的事件監聽（避免重複綁定）
     const newConfirmBtn = confirmBtn.cloneNode(true);

@@ -29,7 +29,7 @@ function setupSheets() {
   const sheetConfigs = [
     {
       name:    SHEET_NAMES.PERSONNEL,
-      headers: ['信箱', '姓名', '員工狀態', '電話', '手機'],
+      headers: ['信箱', '姓名', '員工狀態', '電話', '手機', '到職日期', '離職日期'],
       note:    'Sheet 1：人員主檔 — 信箱為主鍵（Primary Key）',
     },
     {

@@ -23,13 +23,15 @@
 const SHEET_SCHEMA = [
   {
     name: '人員主檔',
-    headers: ['信箱', '姓名', '員工狀態', '電話', '手機'],
+    headers: ['信箱', '姓名', '員工狀態', '電話', '手機', '到職日期', '離職日期'],
     notes:   [
       'Primary Key：全系統唯一，格式須符合 email 規範',
       '員工中文全名',
       '限定值：在勤／育嬰假／休假／留職停薪／合作單位／委外廠商／外派人員／倫理委員會',
       '市話／分機（選填）',
       '行動電話（選填）',
+      '到職日期（選填，格式 yyyy/MM/dd）',
+      '離職日期（選填，格式 yyyy/MM/dd）',
     ],
     headerColor: '#1a73e8',
   },
@@ -261,6 +263,32 @@ function migratePersonnelStatusAndAssetRoles() {
   );
 }
 
+/**
+ * 於既有正式表補上「到職日期 / 離職日期」兩欄標題（附加於尾欄、免搬移資料）。
+ * 在 Apps Script 編輯器手動執行；資料列尾欄留空，讀取以 row[5]/row[6] 空值容錯。
+ */
+function migratePersonnelAddDateColumns() {
+  const sheet = getSheet(SHEET_NAMES.PERSONNEL);
+  const hireCol1 = col1(COL.PERSONNEL.HIRE_DATE);   // 1-based：第 6 欄
+  const leaveCol1 = col1(COL.PERSONNEL.LEAVE_DATE);  // 1-based：第 7 欄
+
+  const hireCell = sheet.getRange(1, hireCol1);
+  const leaveCell = sheet.getRange(1, leaveCol1);
+
+  const hireExisting = String(hireCell.getValue() || '').trim();
+  const leaveExisting = String(leaveCell.getValue() || '').trim();
+
+  if (hireExisting === '到職日期' && leaveExisting === '離職日期') {
+    Logger.log('[migrate] 到職/離職日期欄位標題已存在，略過。');
+    return;
+  }
+
+  hireCell.setValue('到職日期').setNote('到職日期（選填，格式 yyyy/MM/dd）');
+  leaveCell.setValue('離職日期').setNote('離職日期（選填，格式 yyyy/MM/dd）');
+  SpreadsheetApp.flush();
+  Logger.log('[migrate] 已補上到職日期(F)、離職日期(G) 欄位標題。');
+}
+
 // ============================================================
 // 3. 結構建立（共用，Private）
 // ============================================================
@@ -361,19 +389,19 @@ function applyHeaderRow_(sheet, schema) {
  */
 function injectPersonnel_() {
   const data = [
-    // [信箱,              姓名,         員工狀態,   電話,            手機]
-    ['e001@example.org',        '王代表',         '在勤',     '02-1234-0001',  '0911-000-001'],
-    ['e002@example.org',        '李執行長',       '在勤',     '02-1234-0002',  '0911-000-002'],
-    ['e003@example.org',        '張生醫部長',     '在勤',     '02-1234-0003',  '0911-000-003'],
-    ['e004@example.org',        '陳資訊部長',     '在勤',     '02-1234-0004',  '0911-000-004'],
-    ['e005@example.org',        '林行政部長',     '在勤',     '02-1234-0005',  '0911-000-005'],
-    ['e006@example.org',        '小明',           '在勤',     '02-1234-0006',  '0911-000-006'],
-    ['e007@example.org',        '小華',           '育嬰假',   '02-1234-0007',  '0911-000-007'],
-    ['e008@example.org',        '何人資',         '在勤',     '02-1234-0008',  '0911-000-008'],
-    ['e009@example.org',        '周稽核',         '在勤',     '02-1234-0009',  '0911-000-009'],
-    ['e010@example.org',        '吳組長',         '休假',     '02-1234-0010',  '0911-000-010'],
-    ['e011@example.org',        '鄭專員',         '留職停薪', '02-1234-0011',  '0911-000-011'],
-    ['ext.vendor@example.org',  '廠商窗口',       '在勤',     '',              ''],
+    // [信箱,              姓名,         員工狀態,   電話,            手機,            到職日期,      離職日期]
+    ['e001@example.org',        '王代表',         '在勤',     '02-1234-0001',  '0911-000-001',  '2018/01/02',  ''],
+    ['e002@example.org',        '李執行長',       '在勤',     '02-1234-0002',  '0911-000-002',  '2018/03/15',  ''],
+    ['e003@example.org',        '張生醫部長',     '在勤',     '02-1234-0003',  '0911-000-003',  '2019/06/01',  ''],
+    ['e004@example.org',        '陳資訊部長',     '在勤',     '02-1234-0004',  '0911-000-004',  '2019/09/10',  ''],
+    ['e005@example.org',        '林行政部長',     '在勤',     '02-1234-0005',  '0911-000-005',  '2020/02/03',  ''],
+    ['e006@example.org',        '小明',           '在勤',     '02-1234-0006',  '0911-000-006',  '2021/07/19',  ''],
+    ['e007@example.org',        '小華',           '育嬰假',   '02-1234-0007',  '0911-000-007',  '2021/08/02',  ''],
+    ['e008@example.org',        '何人資',         '在勤',     '02-1234-0008',  '0911-000-008',  '2020/11/23',  ''],
+    ['e009@example.org',        '周稽核',         '在勤',     '02-1234-0009',  '0911-000-009',  '2022/01/10',  ''],
+    ['e010@example.org',        '吳組長',         '休假',     '02-1234-0010',  '0911-000-010',  '2019/04/08',  ''],
+    ['e011@example.org',        '鄭專員',         '留職停薪', '02-1234-0011',  '0911-000-011',  '2022/05/16',  ''],
+    ['ext.vendor@example.org',  '廠商窗口',       '在勤',     '',              '',              '',            ''],
   ];
   appendToSheet_('人員主檔', data);
   Logger.log('[inject] 人員主檔：' + data.length + ' 筆');

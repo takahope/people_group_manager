@@ -671,6 +671,8 @@ const Pages = {
               <input type="search" id="personnelSearch" class="personnel-search__input" placeholder="搜尋姓名、信箱、狀態…">
             </div>
           </label>
+          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="importPersonBtn">⬆ 匯入</button>' : ''}
+          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬇ 匯出</button>' : ''}
           ${canWrite ? '<button class="btn btn--primary personnel-toolbar__action" id="addPersonBtn">＋ 新增人員</button>' : ''}
         </div>
       </section>
@@ -860,6 +862,14 @@ const Pages = {
         if (addBtn) {
           addBtn.onclick = () => Pages._showPersonForm(null);
         }
+        const importBtn = pageCtx.query('#importPersonBtn');
+        if (importBtn) {
+          importBtn.onclick = () => Pages._showPersonnelImport();
+        }
+        const exportBtn = pageCtx.query('#exportPersonBtn');
+        if (exportBtn) {
+          exportBtn.onclick = () => Pages._showPersonnelExport();
+        }
       }
     } catch (err) {
       if (!pageCtx.isActive()) return;
@@ -900,9 +910,41 @@ const Pages = {
       <div class="form-group">
         <label class="form-label">手機</label>
         <input type="text" class="form-control" id="pMobile" value="${Components.escapeHtml(person.mobile || '')}" maxlength="30" placeholder="行動電話（選填）">
+      </div>
+      <div class="form-group">
+        <label class="form-label">到職日期</label>
+        <input type="date" class="form-control" id="pHireDate" value="${Components.escapeHtml(Pages._toDateInputValue(person.hireDate))}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">離職日期</label>
+        <input type="date" class="form-control" id="pLeaveDate" value="${Components.escapeHtml(Pages._toDateInputValue(person.leaveDate))}">
       </div>`;
   },
 
+  // 將 'yyyy/MM/dd'（或可解析的日期字串）轉為 <input type="date"> 需要的 'yyyy-MM-dd'；無法解析回 ''。
+  _toDateInputValue(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const m = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+    if (m) return `${m[1]}-${('0' + m[2]).slice(-2)}-${('0' + m[3]).slice(-2)}`;
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${('0' + (d.getMonth() + 1)).slice(-2)}-${('0' + d.getDate()).slice(-2)}`;
+    }
+    return '';
+  },
+
+  // <input type="date"> 的 'yyyy-MM-dd' 轉回專案儲存格式 'yyyy/MM/dd'；空回 ''。
+  _fromDateInputValue(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    return s.replace(/-/g, '/');
+  },
+
+  // 假進度控制器。
+  // - 預設（不傳 durationMs）：300ms tick、每次 +10% 到 90%，沿用既有行為。
+  // - 傳 durationMs（如 10000）：改 1000ms tick、平均爬升到 90%（10 秒約 90%），
+  //   並每秒輪播 options.messages 內的文案，營造資料處理中的即時感。
   _createProgressController(options = {}) {
     const bodyEl = document.getElementById('modalBody');
     const confirmBtn = document.getElementById('modalConfirmBtn');
@@ -910,15 +952,22 @@ const Pages = {
     const closeBtn = document.getElementById('modalClose');
     const originalConfirmDisplay = confirmBtn ? confirmBtn.style.display : '';
     const originalCancelText = cancelBtn ? cancelBtn.textContent : '取消';
-    let progress = 0;
-    let intervalId = null;
-    const message = options.message || '處理中...';
+    const messages = (Array.isArray(options.messages) && options.messages.length)
+      ? options.messages.slice()
+      : [options.message || '處理中...'];
     const hint = options.hint || '請稍候';
+    const durationMs = Number(options.durationMs) > 0 ? Number(options.durationMs) : 0;
+    const tickMs = durationMs ? 1000 : 300;
+    const stepPct = durationMs ? (90 / (durationMs / 1000)) : 10;
+    let progress = 0;
+    let tickIndex = 0;
+    let currentMessage = messages[0];
+    let intervalId = null;
 
     const render = () => {
       if (!bodyEl) return;
       bodyEl.innerHTML = Components.renderModalProgress({
-        message,
+        message: currentMessage,
         percent: progress,
         percentText: `${Math.round(progress)}%`,
         hint,
@@ -927,19 +976,24 @@ const Pages = {
 
     return {
       start() {
+        progress = 0;
+        tickIndex = 0;
+        currentMessage = messages[0];
         render();
         if (confirmBtn) confirmBtn.style.display = 'none';
         if (cancelBtn) cancelBtn.textContent = '處理中';
-        progress = 0;
         intervalId = setInterval(() => {
-          progress = Math.min(progress + 10, 90);
+          tickIndex++;
+          progress = Math.min(progress + stepPct, 90);
+          currentMessage = messages[tickIndex % messages.length];
           render();
-        }, 300);
+        }, tickMs);
       },
       async complete() {
         if (intervalId) clearInterval(intervalId);
         intervalId = null;
         progress = 100;
+        currentMessage = messages[messages.length - 1];
         render();
         await new Promise(resolve => setTimeout(resolve, 180));
       },
@@ -979,6 +1033,8 @@ const Pages = {
       status: person.status,
       phone: person.phone,
       mobile: person.mobile,
+      hireDate: person.hireDate,
+      leaveDate: person.leaveDate,
     };
     prefetchState.byEmail.set(normalizedEmail, cachedPayload);
   },
@@ -992,6 +1048,8 @@ const Pages = {
       status: existingPerson?.status || '在勤',
       phone: existingPerson?.phone || '',
       mobile: existingPerson?.mobile || '',
+      hireDate: existingPerson?.hireDate || '',
+      leaveDate: existingPerson?.leaveDate || '',
     };
 
     Components.showModal(isEdit ? '編輯人員' : '新增人員', Pages._renderPersonFormBody(formDraft, isEdit), async () => {
@@ -1001,6 +1059,8 @@ const Pages = {
         status: document.getElementById('pStatus').value,
         phone:  document.getElementById('pPhone').value.trim(),
         mobile: document.getElementById('pMobile').value.trim(),
+        hireDate:  Pages._fromDateInputValue(document.getElementById('pHireDate').value),
+        leaveDate: Pages._fromDateInputValue(document.getElementById('pLeaveDate').value),
       };
       const progress = Pages._createProgressController({
         message: isEdit ? '儲存人員資料中...' : '新增人員資料中...',
@@ -1027,6 +1087,494 @@ const Pages = {
     }, isEdit ? '儲存' : '新增', {
       closeBeforeConfirm: false,
     });
+  },
+
+  // =============================================
+  // 人員匯入 / 匯出（僅 ADMIN / HR）
+  // =============================================
+
+  // 匯入比對用的可比對欄位（信箱為主鍵，另外比對這些欄位）
+  _personnelImportFields: [
+    { key: 'name',      label: '姓名' },
+    { key: 'status',    label: '員工狀態' },
+    { key: 'phone',     label: '電話' },
+    { key: 'mobile',    label: '手機' },
+    { key: 'hireDate',  label: '到職日期' },
+    { key: 'leaveDate', label: '離職日期' },
+  ],
+
+  _personnelStatusList() {
+    return ['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會'];
+  },
+
+  _personnelExportColumns() {
+    return [
+      { key: 'email',     label: '信箱',     checked: true, always: true },
+      { key: 'name',      label: '姓名',     checked: true },
+      { key: 'status',    label: '員工狀態', checked: true },
+      { key: 'hireDate',  label: '到職日期', checked: true },
+      { key: 'leaveDate', label: '離職日期', checked: true },
+      { key: 'phone',     label: '電話',     checked: false },
+      { key: 'mobile',    label: '手機',     checked: false },
+    ];
+  },
+
+  _exportProgressMessages() {
+    return ['正在讀取人員主檔…', '套用欄位篩選…', '套用狀態篩選…', '整理資料列…', '編碼中文欄位…',
+      '產生檔案內容…', '檢查資料完整性…', '壓縮輸出…', '即將完成…', '完成匯出…'];
+  },
+  _compareProgressMessages() {
+    return ['讀取現有名單…', '建立信箱索引…', '逐筆比對資料…', '檢查欄位差異…', '標記衝突項目…',
+      '整理新增名單…', '計算自動填補…', '驗證資料格式…', '彙整比對結果…', '即將完成…'];
+  },
+  _importProgressMessages() {
+    return ['準備寫入資料…', '鎖定人員主檔…', '套用新增列…', '更新既有列…', '寫入到職／離職日期…',
+      '驗證欄位格式…', '同步試算表…', '記錄操作日誌…', '重新整理清單…', '即將完成…'];
+  },
+
+  // ---------- 匯出 ----------
+  _showPersonnelExport() {
+    const columns = Pages._personnelExportColumns();
+    const statuses = Pages._personnelStatusList();
+    const esc = Components.escapeHtml;
+    const renderBody = () => `
+      <div class="form-group">
+        <label class="form-label">要匯出的欄位</label>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
+          ${columns.map(c => `<label style="display:inline-flex;align-items:center;gap:.3rem">
+            <input type="checkbox" class="export-col" value="${c.key}" ${c.checked ? 'checked' : ''} ${c.always ? 'disabled' : ''}> ${esc(c.label)}${c.always ? '（必含）' : ''}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">員工狀態（不勾＝全部）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
+          ${statuses.map(s => `<label style="display:inline-flex;align-items:center;gap:.3rem">
+            <input type="checkbox" class="export-status" value="${esc(s)}"> ${esc(s)}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">檔案格式</label>
+        <div style="display:flex;gap:1rem">
+          <label style="display:inline-flex;align-items:center;gap:.3rem"><input type="radio" name="exportFormat" value="csv" checked> CSV</label>
+          <label style="display:inline-flex;align-items:center;gap:.3rem"><input type="radio" name="exportFormat" value="xlsx"> Excel (.xlsx)</label>
+        </div>
+      </div>`;
+
+    Components.showModal('匯出人員資料', renderBody(), async () => {
+      const selCols = Array.from(document.querySelectorAll('.export-col')).filter(x => x.checked).map(x => x.value);
+      const selStatuses = Array.from(document.querySelectorAll('.export-status')).filter(x => x.checked).map(x => x.value);
+      const formatEl = document.querySelector('input[name="exportFormat"]:checked');
+      const format = formatEl ? formatEl.value : 'csv';
+      if (!selCols.length) { Components.showToast('請至少選擇一個欄位', 'warning'); return false; }
+
+      const progress = Pages._createProgressController({
+        durationMs: 10000, hint: '整理匯出資料', messages: Pages._exportProgressMessages(),
+      });
+      try {
+        progress.start();
+        const result = await API.exportPersonnel({ columns: selCols, statuses: selStatuses });
+        await progress.complete();
+        const headers = (result && result.headers) || [];
+        const rows = (result && result.rows) || [];
+        if (!rows.length) { Components.showToast('沒有符合條件的人員資料', 'warning'); return true; }
+        Pages._downloadPersonnelFile(headers, rows, format);
+        Components.showToast(`已匯出 ${rows.length} 筆人員資料`, 'success');
+        return true;
+      } catch (err) {
+        progress.stop();
+        API.handleError(err);
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) bodyEl.innerHTML = renderBody();
+        return false;
+      }
+    }, '開始匯出', { closeBeforeConfirm: false, modalClassName: 'modal--wide' });
+  },
+
+  _downloadPersonnelFile(headers, rows, format) {
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${('0' + (now.getMonth() + 1)).slice(-2)}${('0' + now.getDate()).slice(-2)}`;
+    if (format === 'xlsx' && window.XLSX) {
+      const ws = XLSX.utils.aoa_to_sheet([headers].concat(rows));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '人員名單');
+      XLSX.writeFile(wb, `人員名單_${stamp}.xlsx`);
+      return;
+    }
+    const csv = [headers].concat(rows).map(r => r.map(Pages._csvCell).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `人員名單_${stamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  _csvCell(v) {
+    const s = String(v == null ? '' : v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  },
+
+  // ---------- 匯入 ----------
+  _showPersonnelImport() {
+    let parsedRecords = null;
+    const body = `
+      <div class="form-group">
+        <label class="form-label required">選擇檔案（CSV 或 Excel）</label>
+        <input type="file" id="personnelImportFile" class="form-control" accept=".csv,.xlsx,.xls">
+        <p style="font-size:.82rem;color:#64748b;margin-top:.5rem;line-height:1.5">
+          檔案第一列須為欄位標題，且必須包含「信箱」欄。可包含欄位：信箱、姓名、員工狀態、電話、手機、到職日期、離職日期。<br>
+          比對以信箱為單一事實來源；空白欄不會覆蓋既有資料。
+        </p>
+        <div id="personnelImportFileInfo" style="font-size:.85rem;color:#334155;margin-top:.5rem"></div>
+      </div>`;
+
+    Components.showModal('匯入人員 — 選擇檔案', body, async () => {
+      if (!parsedRecords || !parsedRecords.length) {
+        Components.showToast('請先選擇有效的檔案（至少一筆含信箱的資料）', 'warning');
+        return false;
+      }
+      const diff = await Pages._comparePersonnelImport(parsedRecords);
+      Pages._showPersonnelImportPreview(diff);
+      return false; // 預覽 modal 已接手畫面，勿讓 hideModal 關掉它
+    }, '下一步：比對', { closeBeforeConfirm: false, modalClassName: 'modal--wide' });
+
+    const fileInput = document.getElementById('personnelImportFile');
+    if (fileInput) {
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        const info = document.getElementById('personnelImportFileInfo');
+        parsedRecords = null;
+        if (!file) { if (info) info.textContent = ''; return; }
+        try {
+          parsedRecords = await Pages._parseImportFile(file);
+          if (info) info.innerHTML = `已讀取 <strong>${parsedRecords.length}</strong> 筆資料（${Components.escapeHtml(file.name)}）`;
+        } catch (err) {
+          if (info) info.textContent = '檔案解析失敗：' + (err && err.message ? err.message : err);
+          Components.showToast('檔案解析失敗', 'error');
+        }
+      });
+    }
+  },
+
+  _parseImportFile(file) {
+    return new Promise((resolve, reject) => {
+      const name = String(file.name || '').toLowerCase();
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('讀取檔案失敗'));
+      if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+        reader.onload = (e) => {
+          try {
+            if (!window.XLSX) throw new Error('Excel 解析元件未載入');
+            const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+            resolve(Pages._rowsToImportRecords(aoa));
+          } catch (err) { reject(err); }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.onload = (e) => {
+          try {
+            resolve(Pages._rowsToImportRecords(Pages._parseCsv(String(e.target.result || ''))));
+          } catch (err) { reject(err); }
+        };
+        reader.readAsText(file);
+      }
+    });
+  },
+
+  _parseCsv(text) {
+    const clean = String(text || '').replace(/^﻿/, '');
+    const rows = [];
+    let row = [], field = '', inQuotes = false, hasContent = false;
+    for (let i = 0; i < clean.length; i++) {
+      const c = clean[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (clean[i + 1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else { field += c; }
+      } else if (c === '"') {
+        inQuotes = true; hasContent = true;
+      } else if (c === ',') {
+        row.push(field); field = ''; hasContent = true;
+      } else if (c === '\n') {
+        row.push(field); rows.push(row); row = []; field = ''; hasContent = false;
+      } else if (c === '\r') {
+        // 忽略，交由 \n 收尾
+      } else {
+        field += c; hasContent = true;
+      }
+    }
+    if (hasContent || field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  },
+
+  _personnelHeaderAlias(h) {
+    const key = String(h == null ? '' : h).trim().toLowerCase();
+    const map = {
+      '信箱': 'email', 'email': 'email', '電子郵件': 'email', 'e-mail': 'email',
+      '姓名': 'name', 'name': 'name',
+      '員工狀態': 'status', '狀態': 'status', 'status': 'status',
+      '電話': 'phone', 'phone': 'phone', '市話': 'phone',
+      '手機': 'mobile', '行動電話': 'mobile', 'mobile': 'mobile',
+      '到職日期': 'hireDate', '到職日': 'hireDate', 'hiredate': 'hireDate',
+      '離職日期': 'leaveDate', '離職日': 'leaveDate', 'leavedate': 'leaveDate',
+    };
+    return map[key] || '';
+  },
+
+  _rowsToImportRecords(aoa) {
+    const rows = (aoa || []).filter(r => Array.isArray(r) && r.some(c => String(c == null ? '' : c).trim() !== ''));
+    if (rows.length < 2) return [];
+    const header = rows[0].map(h => String(h == null ? '' : h).trim());
+    const colIndex = {};
+    header.forEach((h, idx) => {
+      const key = Pages._personnelHeaderAlias(h);
+      if (key && colIndex[key] === undefined) colIndex[key] = idx;
+    });
+    if (colIndex.email === undefined) throw new Error('找不到「信箱」欄，請確認第一列標題');
+    const cellAt = (row, field) => {
+      const idx = colIndex[field];
+      return idx === undefined ? '' : String(row[idx] == null ? '' : row[idx]).trim();
+    };
+    return rows.slice(1).map(r => ({
+      email: cellAt(r, 'email'),
+      name: cellAt(r, 'name'),
+      status: cellAt(r, 'status'),
+      phone: cellAt(r, 'phone'),
+      mobile: cellAt(r, 'mobile'),
+      hireDate: Pages._normalizeDateStr(cellAt(r, 'hireDate')),
+      leaveDate: Pages._normalizeDateStr(cellAt(r, 'leaveDate')),
+    })).filter(rec => rec.email);
+  },
+
+  _normalizeDateStr(s) {
+    const raw = String(s == null ? '' : s).trim();
+    if (!raw) return '';
+    const m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+    if (m) return `${m[1]}/${('0' + m[2]).slice(-2)}/${('0' + m[3]).slice(-2)}`;
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}/${('0' + (d.getMonth() + 1)).slice(-2)}/${('0' + d.getDate()).slice(-2)}`;
+    }
+    return raw;
+  },
+
+  async _comparePersonnelImport(imported) {
+    const progress = Pages._createProgressController({
+      durationMs: 10000, hint: '比對現有名單', messages: Pages._compareProgressMessages(),
+    });
+    progress.start();
+    let existingList = [];
+    try {
+      existingList = await API.getAllPersonnel();
+    } catch (err) {
+      progress.stop();
+      API.handleError(err);
+      throw err;
+    }
+    await progress.complete();
+
+    const byEmail = new Map();
+    (Array.isArray(existingList) ? existingList : []).forEach(p => {
+      byEmail.set(String(p.email || '').trim().toLowerCase(), p);
+    });
+
+    const statusSet = new Set(Pages._personnelStatusList());
+    const fields = Pages._personnelImportFields;
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const result = { news: [], fills: [], conflicts: [], errors: [], unchanged: 0 };
+    const seen = new Set();
+
+    imported.forEach(rec => {
+      const email = String(rec.email || '').trim();
+      const key = email.toLowerCase();
+      if (!email || !emailRe.test(email)) {
+        result.errors.push({ email: email || '(空白信箱)', reason: '信箱格式不正確' });
+        return;
+      }
+      if (seen.has(key)) { result.errors.push({ email, reason: '檔案內信箱重複' }); return; }
+      seen.add(key);
+
+      const existing = byEmail.get(key);
+      if (!existing) {
+        const problems = [];
+        if (!rec.name) problems.push('缺少姓名');
+        if (rec.status && !statusSet.has(rec.status)) problems.push('員工狀態不合法');
+        if (problems.length) { result.errors.push({ email, reason: problems.join('、') }); return; }
+        result.news.push({
+          email,
+          final: {
+            email, name: rec.name, status: rec.status || '在勤',
+            phone: rec.phone, mobile: rec.mobile, hireDate: rec.hireDate, leaveDate: rec.leaveDate,
+            action: 'add',
+          },
+        });
+        return;
+      }
+
+      const finalBase = {
+        email: existing.email, name: existing.name || '', status: existing.status || '在勤',
+        phone: existing.phone || '', mobile: existing.mobile || '',
+        hireDate: existing.hireDate || '', leaveDate: existing.leaveDate || '',
+      };
+      const fillFields = [];
+      const conflictFields = [];
+      let statusInvalid = false;
+      fields.forEach(f => {
+        const impVal = String(rec[f.key] || '').trim();
+        const exVal = String(existing[f.key] || '').trim();
+        if (!impVal) return;
+        if (f.key === 'status' && !statusSet.has(impVal)) { statusInvalid = true; return; }
+        if (!exVal) fillFields.push({ key: f.key, label: f.label, oldVal: exVal, newVal: impVal });
+        else if (exVal !== impVal) conflictFields.push({ key: f.key, label: f.label, oldVal: exVal, newVal: impVal });
+      });
+      if (statusInvalid) { result.errors.push({ email, reason: '員工狀態不合法' }); return; }
+
+      if (!fillFields.length && !conflictFields.length) { result.unchanged++; return; }
+
+      if (conflictFields.length) {
+        result.conflicts.push({ email, name: existing.name || '', existing: finalBase, fillFields, conflictFields });
+      } else {
+        const final = Object.assign({}, finalBase, { action: 'update' });
+        fillFields.forEach(f => { final[f.key] = f.newVal; });
+        result.fills.push({ email, name: existing.name || '', fillFields, final });
+      }
+    });
+    return result;
+  },
+
+  _renderImportPreview(diff) {
+    const esc = Components.escapeHtml;
+    const c = { n: diff.news.length, u: diff.fills.length, k: diff.conflicts.length, e: diff.errors.length, s: diff.unchanged };
+    const parts = [];
+    parts.push(`<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+      <span class="badge badge--success">新增 ${c.n}</span>
+      <span class="badge badge--primary">自動更新 ${c.u}</span>
+      <span class="badge badge--warning">衝突 ${c.k}</span>
+      <span class="badge badge--danger">錯誤 ${c.e}</span>
+      <span class="badge badge--neutral">無變更 ${c.s}</span>
+    </div>`);
+
+    if (c.n) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">新增人員（${c.n}）</h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7">' +
+        diff.news.map(n => `<li>${esc(n.final.email)}　${esc(n.final.name)}　<span class="badge badge--neutral">${esc(n.final.status)}</span></li>`).join('') + '</ul>');
+    }
+    if (c.u) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">自動填補空欄（${c.u}）</h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7">' +
+        diff.fills.map(f => `<li>${esc(f.email)}　${esc(f.name)}：${f.fillFields.map(x => `${esc(x.label)}→${esc(x.newVal)}`).join('、')}</li>`).join('') + '</ul>');
+    }
+    if (c.k) {
+      parts.push(`<div style="display:flex;justify-content:space-between;align-items:center;margin:.75rem 0 .35rem">
+        <h3 style="margin:0;font-size:.95rem">欄位衝突（${c.k}）</h3>
+        <div style="display:flex;gap:.4rem">
+          <button type="button" class="btn btn--ghost btn--sm" id="importConflictOverwriteAll">全部覆蓋</button>
+          <button type="button" class="btn btn--ghost btn--sm" id="importConflictRejectAll">全部拒絕</button>
+        </div>
+      </div>`);
+      parts.push(diff.conflicts.map((cf, i) => `
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .75rem;margin-bottom:.5rem">
+          <div style="font-weight:600;margin-bottom:.35rem;font-size:.9rem">${esc(cf.email)}　${esc(cf.name)}</div>
+          ${cf.conflictFields.map(f => `<div style="font-size:.83rem;line-height:1.6">${esc(f.label)}：<span style="color:#b91c1c">${esc(f.oldVal || '(空白)')}</span> → <span style="color:#047857">${esc(f.newVal)}</span></div>`).join('')}
+          ${cf.fillFields.length ? `<div style="font-size:.78rem;color:#64748b;margin-top:.25rem">另自動填補：${cf.fillFields.map(x => esc(x.label)).join('、')}</div>` : ''}
+          <div style="margin-top:.5rem;display:flex;gap:1.2rem;font-size:.85rem">
+            <label style="display:inline-flex;align-items:center;gap:.3rem"><input type="radio" name="conflict_${i}" value="overwrite"> 覆蓋</label>
+            <label style="display:inline-flex;align-items:center;gap:.3rem"><input type="radio" name="conflict_${i}" value="reject" checked> 拒絕</label>
+          </div>
+        </div>`).join(''));
+    }
+    if (c.e) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem;color:#b91c1c">無法匯入（${c.e}）</h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7;color:#b91c1c">' +
+        diff.errors.map(er => `<li>${esc(er.email)}：${esc(er.reason)}</li>`).join('') + '</ul>');
+    }
+    if (!c.n && !c.u && !c.k) {
+      parts.push('<p style="color:#64748b;font-size:.9rem">沒有需要寫入的變更。</p>');
+    }
+    return parts.join('');
+  },
+
+  _bindImportPreviewControls(diff) {
+    const setAll = (val) => {
+      diff.conflicts.forEach((_, i) => {
+        const el = document.querySelector(`input[name="conflict_${i}"][value="${val}"]`);
+        if (el) el.checked = true;
+      });
+    };
+    const overBtn = document.getElementById('importConflictOverwriteAll');
+    const rejectBtn = document.getElementById('importConflictRejectAll');
+    if (overBtn) overBtn.onclick = () => setAll('overwrite');
+    if (rejectBtn) rejectBtn.onclick = () => setAll('reject');
+  },
+
+  _showPersonnelImportPreview(diff) {
+    const hasWork = (diff.news.length + diff.fills.length + diff.conflicts.length) > 0;
+    Components.showModal('匯入預覽', Pages._renderImportPreview(diff), async () => {
+      const records = [];
+      diff.news.forEach(n => records.push(n.final));
+      diff.fills.forEach(f => records.push(f.final));
+      diff.conflicts.forEach((cf, i) => {
+        const sel = document.querySelector(`input[name="conflict_${i}"]:checked`);
+        const decision = sel ? sel.value : 'reject';
+        const final = Object.assign({}, cf.existing, { action: 'update' });
+        cf.fillFields.forEach(f => { final[f.key] = f.newVal; });
+        if (decision === 'overwrite') {
+          cf.conflictFields.forEach(f => { final[f.key] = f.newVal; });
+          records.push(final);
+        } else if (cf.fillFields.length) {
+          records.push(final);
+        }
+      });
+
+      if (!records.length) { Components.showToast('沒有需要寫入的變更', 'warning'); return true; }
+
+      const progress = Pages._createProgressController({
+        durationMs: 10000, hint: '寫入人員主檔', messages: Pages._importProgressMessages(),
+      });
+      try {
+        progress.start();
+        const res = await API.importPersonnelBatch(records);
+        await progress.complete();
+        await Pages._reloadPersonnelAfterImport();
+        Components.showToast(`匯入完成：新增 ${res.added}、更新 ${res.updated}、略過 ${res.skipped}`,
+          res.skipped ? 'warning' : 'success');
+        return true;
+      } catch (err) {
+        progress.stop();
+        API.handleError(err);
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) bodyEl.innerHTML = Pages._renderImportPreview(diff);
+        Pages._bindImportPreviewControls(diff);
+        return false;
+      }
+    }, '確認匯入', {
+      closeBeforeConfirm: false,
+      modalClassName: 'modal--wide',
+      bodyClassName: 'modal__body--dense',
+      hideConfirm: !hasWork,
+      cancelText: hasWork ? '取消' : '關閉',
+    });
+    Pages._bindImportPreviewControls(diff);
+  },
+
+  async _reloadPersonnelAfterImport() {
+    const state = Pages._personnelState;
+    const pageCtx = state && state.pageCtx;
+    if (!state || !pageCtx || !pageCtx.isActive()) return;
+    try {
+      const data = await API.getAllPersonnel();
+      if (state.navId !== pageCtx.navId) return;
+      state.data = Array.isArray(data) ? data.slice() : [];
+      state.refreshView();
+    } catch (err) {
+      console.error('匯入後重新載入人員失敗：', err);
+    }
   },
 
   async _editPerson(email) {

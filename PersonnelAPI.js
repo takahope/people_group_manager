@@ -373,6 +373,147 @@ function getRecentLogs() {
 }
 
 // =============================================
+// 匯入 / 匯出
+// =============================================
+
+/** 匯出可選欄位定義（key → 中文標題），前端複選以此為準。 */
+const PERSONNEL_EXPORT_COLUMNS_ = [
+  { key: 'email',     label: '信箱' },
+  { key: 'name',      label: '姓名' },
+  { key: 'status',    label: '員工狀態' },
+  { key: 'phone',     label: '電話' },
+  { key: 'mobile',    label: '手機' },
+  { key: 'hireDate',  label: '到職日期' },
+  { key: 'leaveDate', label: '離職日期' },
+];
+
+/**
+ * 匯出人員資料（回結構化資料，前端據此產 CSV 或 xlsx）。
+ *
+ * @param {{columns?:string[], statuses?:string[]}} options
+ *   columns：要匯出的欄位 key（信箱恆含）；空＝全部欄位。
+ *   statuses：要匯出的員工狀態；空＝全部狀態。
+ * @returns {string} JSON 回應 { headers:[中文標題], keys:[欄位key], rows:[[...]] }
+ */
+function exportPersonnel(options) {
+  if (!checkPermission('personnel.export')) return errorResponse('無匯出人員資料的權限');
+
+  const opts = options || {};
+  const validKeys = PERSONNEL_EXPORT_COLUMNS_.map(c => c.key);
+
+  // 決定欄位（信箱恆含且置首）
+  let selectedKeys = Array.isArray(opts.columns) && opts.columns.length
+    ? opts.columns.filter(k => validKeys.indexOf(k) >= 0)
+    : validKeys.slice();
+  if (selectedKeys.indexOf('email') < 0) selectedKeys.unshift('email');
+  // 依 PERSONNEL_EXPORT_COLUMNS_ 的固定順序排列
+  selectedKeys = validKeys.filter(k => selectedKeys.indexOf(k) >= 0);
+
+  const statusFilter = Array.isArray(opts.statuses) ? new Set(opts.statuses) : null;
+
+  let list = DataService.getSheet1Data();
+  if (statusFilter && statusFilter.size) {
+    list = list.filter(p => statusFilter.has(p.status));
+  }
+
+  const labelByKey = {};
+  PERSONNEL_EXPORT_COLUMNS_.forEach(c => { labelByKey[c.key] = c.label; });
+
+  const headers = selectedKeys.map(k => labelByKey[k]);
+  const rows = list.map(p => selectedKeys.map(k => (p[k] == null ? '' : String(p[k]))));
+
+  return successResponse({ headers, keys: selectedKeys, rows });
+}
+
+/**
+ * 批次匯入人員（前端已完成衝突解析，records 為最終目標值）。
+ *
+ * @param {Array<{email,name,status,phone,mobile,hireDate,leaveDate,action}>} records
+ * @returns {string} JSON 回應 { added, updated, skipped, errors:[{email,reason}] }
+ */
+function importPersonnelBatch(records) {
+  if (!checkPermission('personnel.import')) return errorResponse('無匯入人員資料的權限');
+
+  const list = Array.isArray(records) ? records : [];
+  if (!list.length) return errorResponse('沒有可匯入的資料');
+
+  const valid = [];
+  const errors = [];
+  const seen = new Set();
+
+  list.forEach(rec => {
+    const email = String(rec && rec.email || '').trim();
+    const key = email.toLowerCase();
+    if (key && seen.has(key)) {
+      errors.push({ email, reason: '檔案內信箱重複' });
+      return;
+    }
+    if (key) seen.add(key);
+
+    const normalized = {
+      email: email,
+      name: String(rec.name || '').trim(),
+      status: String(rec.status || '').trim(),
+      phone: String(rec.phone || '').trim(),
+      mobile: String(rec.mobile || '').trim(),
+      hireDate: normalizeDateValue_(rec.hireDate),
+      leaveDate: normalizeDateValue_(rec.leaveDate),
+    };
+
+    const validationError = validatePersonObj(normalized);
+    if (validationError) {
+      errors.push({ email: email || '(空白信箱)', reason: validationError });
+      return;
+    }
+    valid.push(normalized);
+  });
+
+  const result = valid.length
+    ? DataService.bulkImportPersonnel(valid)
+    : { added: 0, updated: 0 };
+
+  DataService.appendAuditLog(
+    'IMPORT',
+    '人員主檔批次匯入',
+    `新增: ${result.added}，更新: ${result.updated}，略過: ${errors.length}`
+  );
+
+  return successResponse({
+    added: result.added,
+    updated: result.updated,
+    skipped: errors.length,
+    errors,
+  });
+}
+
+/**
+ * 寬鬆日期正規化：接受 yyyy/MM/dd、yyyy-MM-dd、yyyy.MM.dd 或可被 Date 解析的字串，
+ * 統一輸出為 'yyyy/MM/dd'；空值回 ''；無法解析則保留原字串（不擋整批）。
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function normalizeDateValue_(v) {
+  if (v === null || v === undefined) return '';
+  const raw = String(v).trim();
+  if (!raw) return '';
+
+  const m = raw.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (m) {
+    const y = m[1];
+    const mo = ('0' + m[2]).slice(-2);
+    const d = ('0' + m[3]).slice(-2);
+    return `${y}/${mo}/${d}`;
+  }
+
+  const parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, 'Asia/Taipei', 'yyyy/MM/dd');
+  }
+  return raw;
+}
+
+// =============================================
 // 驗證輔助（Private）
 // =============================================
 
@@ -398,6 +539,13 @@ function validatePersonObj(personObj) {
   }
   if (personObj.mobile && String(personObj.mobile).length > 30) {
     return '手機長度不可超過 30 字元';
+  }
+  // 到職／離職日期為選填，寬鬆驗證：僅限制長度，格式交由 normalizeDateValue_ 正規化
+  if (personObj.hireDate && String(personObj.hireDate).length > 20) {
+    return '到職日期格式異常';
+  }
+  if (personObj.leaveDate && String(personObj.leaveDate).length > 20) {
+    return '離職日期格式異常';
   }
   return null;
 }

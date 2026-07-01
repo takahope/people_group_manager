@@ -142,6 +142,8 @@ const API = (() => {
     addPerson:        (obj)                  => callGAS('addPerson', obj),
     updatePerson:     (email, obj)           => callGAS('updatePerson', email, obj),
     deletePerson:     (email)                => callGAS('deletePerson', email),
+    exportPersonnel:  (opts)                 => callGAS('exportPersonnel', opts),
+    importPersonnelBatch: (records)          => callGASWithTimeout('importPersonnelBatch', 120000, records),
     getAssignmentList: ()                    => callGAS('getAssignmentList'),
     getAssignmentFormOptions: ()             => callGAS('getAssignmentFormOptions'),
     getAssignments:   (email)                => callGAS('getAssignmentsByEmail', email),
