@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>通行碼驗證 — 人員狀態查詢</title>
+  <?!= include('styles'); ?>
+  <style>
+    .passcode-shell {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: var(--color-bg);
+    }
+    .passcode-card {
+      background: var(--color-surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 380px;
+      padding: 2rem 1.75rem;
+    }
+    .passcode-card__title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0 0 .5rem;
+      color: var(--color-text);
+    }
+    .passcode-card__desc {
+      font-size: .85rem;
+      color: var(--color-text-sub);
+      margin: 0 0 1.25rem;
+      line-height: 1.6;
+    }
+    .passcode-card__desc code {
+      font-family: var(--font-mono);
+      background: var(--color-bg);
+      padding: .1rem .35rem;
+      border-radius: var(--radius-sm);
+    }
+    .passcode-card__actions .btn {
+      width: 100%;
+      justify-content: center;
+      margin-top: .5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="passcode-shell">
+    <div class="passcode-card">
+      <? if (mode === 'not_configured') { ?>
+        <h1 class="passcode-card__title">🔒 系統尚未設定通行碼</h1>
+        <p class="passcode-card__desc">
+          本系統啟用了全站通行碼保護，但管理員尚未於 Script Properties 設定
+          <code>SITE_PASSCODE</code>。請聯繫系統管理員完成設定後再嘗試登入。
+        </p>
+      <? } else { ?>
+        <h1 class="passcode-card__title">🔑 請輸入系統通行碼</h1>
+        <p class="passcode-card__desc">為保護人事資料，請先輸入通行碼；驗證通過後將依您的帳號角色進入系統（效期 8 小時）。</p>
+        <div class="form-group">
+          <label class="form-label" for="passcodeInput">通行碼</label>
+          <input type="password" id="passcodeInput" class="form-control" autocomplete="off" autofocus>
+          <p class="form-error" id="passcodeError" hidden></p>
+        </div>
+        <div class="passcode-card__actions">
+          <button class="btn btn--primary" id="passcodeSubmitBtn">送出</button>
+        </div>
+      <? } ?>
+    </div>
+  </div>
+
+  <? if (mode !== 'not_configured') { ?>
+  <script>
+    (function () {
+      const input = document.getElementById('passcodeInput');
+      const btn = document.getElementById('passcodeSubmitBtn');
+      const errorEl = document.getElementById('passcodeError');
+
+      function setError(message) {
+        errorEl.hidden = !message;
+        errorEl.textContent = message || '';
+        input.classList.toggle('form-control--error', !!message);
+      }
+
+      function submit() {
+        const code = input.value;
+        if (!code) { setError('請輸入通行碼'); input.focus(); return; }
+        setError('');
+        btn.disabled = true;
+        btn.textContent = '驗證中...';
+
+        google.script.run
+          .withSuccessHandler(function (raw) {
+            const result = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+            if (result && result.success) {
+              btn.textContent = '驗證成功，載入中...';
+              location.reload();
+            } else {
+              btn.disabled = false;
+              btn.textContent = '送出';
+              setError((result && result.error) || '通行碼錯誤，請重新輸入');
+              input.value = '';
+              input.focus();
+            }
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            btn.textContent = '送出';
+            setError((err && err.message) || '驗證失敗，請稍後再試');
+          })
+          .verifyPasscode(code);
+      }
+
+      btn.addEventListener('click', submit);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+    })();
+  </script>
+  <? } ?>
+</body>
+</html>

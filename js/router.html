@@ -2679,10 +2679,10 @@ const Pages = {
         <div style="display:flex;align-items:center;gap:.5rem">
           <label for="orgViewDepthSel" style="font-size:.85rem;color:var(--color-text-sub);white-space:nowrap">向下顯示層數：</label>
           <select id="orgViewDepthSel" class="form-control" style="width:auto;padding:.3rem .6rem;font-size:.85rem">
-            <option value="all" selected>全部層數（完整子樹）</option>
+            <option value="all">全部層數（完整子樹）</option>
             <option value="1">1 層（僅直屬子節點）</option>
             <option value="2">2 層</option>
-            <option value="3">3 層</option>
+            <option value="3" selected>3 層</option>
             <option value="4">4 層</option>
             <option value="5">5 層</option>
           </select>
@@ -2703,7 +2703,9 @@ const Pages = {
     }
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
-    const orgView = { mode: 'list', type: null, startCode: '', depth: 'all', result: null };
+    // 預設進入頁面時顯示「PRE 代表人」起始節點、向下 3 層
+    const orgView = { mode: 'list', type: null, startCode: 'PRE', depth: '3', result: null };
+    let orgViewFirstLoad = true; // 首次載入沿用上方預設起始節點，之後切換組織類別才重置
 
     let activeMemberRequestId = 0;
     const prefetchState = Pages._orgMemberPrefetchState = {
@@ -2906,7 +2908,8 @@ const Pages = {
       const treeDiv = pageCtx.query('#orgTreeContainer');
       if (!treeDiv) return;
       orgView.type = type || null;
-      orgView.startCode = ''; // 切換組織類別時重置起始節點
+      if (!orgViewFirstLoad) orgView.startCode = ''; // 切換組織類別時重置起始節點（首次進入頁面保留預設值）
+      orgViewFirstLoad = false;
       treeDiv.innerHTML = '<div class="page-loading"><div class="spinner"></div></div>';
       try {
         const result = await API.getOrgTree(type || null);

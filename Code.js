@@ -37,6 +37,21 @@ const SHEET_NAMES = {
  */
 function doGet(e) {
   try {
+    // 通行碼關卡：在身份驗證之前檢查，未設定/未通過/已過期一律阻擋（無角色例外）
+    const gateResult = parseServiceResponse(AuthService.getPasscodeGateStatus());
+    if (!gateResult.success) {
+      Logger.log('doGet 通行碼關卡檢查失敗：' + (gateResult.error || '未知錯誤'));
+      return buildErrorPage(
+        gateResult.error || '無法識別您的身份，請確認您已登入組織 Google 帳號。'
+      );
+    }
+    if (!gateResult.data.configured) {
+      return buildPasscodeSetupRequiredPage();
+    }
+    if (!gateResult.data.verified) {
+      return buildPasscodeLoginPage();
+    }
+
     const userInfoResult = parseServiceResponse(AuthService.getCurrentUser());
 
     // 身份驗證失敗：回傳無權限頁面
@@ -108,6 +123,32 @@ function buildErrorPage(message) {
     </body>
     </html>`;
   return HtmlService.createHtmlOutput(html).setTitle('存取受限');
+}
+
+/**
+ * 通行碼輸入頁 — 已設定通行碼但使用者尚未通過驗證/驗證已過期時顯示
+ * @returns {HtmlOutput}
+ */
+function buildPasscodeLoginPage() {
+  const template = HtmlService.createTemplateFromFile('passcode');
+  template.mode = 'input';
+  return template.evaluate()
+    .setTitle('通行碼驗證 — HR 管理系統')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * 通行碼未設定提示頁 — Script Property 尚未設定時顯示，阻擋所有角色（含 ADMIN）
+ * @returns {HtmlOutput}
+ */
+function buildPasscodeSetupRequiredPage() {
+  const template = HtmlService.createTemplateFromFile('passcode');
+  template.mode = 'not_configured';
+  return template.evaluate()
+    .setTitle('系統尚未設定通行碼 — HR 管理系統')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**

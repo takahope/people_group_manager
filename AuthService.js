@@ -33,6 +33,15 @@ const ADMIN_ROLE_EMAILS_KEY = 'ADMIN_ROLE_EMAILS';
 /** @const {string} Script Properties 中 HR 白名單 key */
 const HR_ROLE_EMAILS_KEY = 'HR_ROLE_EMAILS';
 
+/** @const {string} Script Properties 中全站通行碼 key */
+const SITE_PASSCODE_KEY = 'SITE_PASSCODE';
+
+/** @const {number} 通行碼 Session 有效期（毫秒），8 小時 —— 與角色 Session TTL 分開定義，互不影響 */
+const PASSCODE_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+/** @const {string} PropertiesService 的通行碼 Session Key 前綴 */
+const PASSCODE_SESSION_KEY_PREFIX = 'HR_PASSCODE_SESSION_';
+
 // =============================================
 // Public API
 // =============================================
@@ -68,6 +77,71 @@ function getCurrentUser() {
   } catch (error) {
     Logger.log('getCurrentUser 錯誤：' + error.message);
     return errorResponse('身份驗證失敗：' + error.message);
+  }
+}
+
+/**
+ * 取得通行碼關卡狀態，供 doGet() 判斷要顯示哪一種頁面
+ * 此為「進入系統前」的關卡，不涉及角色判斷
+ *
+ * @returns {string} JSON — { success, data: { configured, verified } }
+ */
+function getPasscodeGateStatus() {
+  try {
+    const configured = isPasscodeConfigured_();
+    if (!configured) {
+      return successResponse({ configured: false, verified: false });
+    }
+
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      Logger.log('getPasscodeGateStatus：Session.getActiveUser().getEmail() 為空值');
+      return errorResponse(
+        '無法取得登入 Email。請確認 Web App 以「使用者存取 Web 應用程式時」身分執行，且目前登入帳號與部署者位於允許的 Google Workspace 範圍內。'
+      );
+    }
+
+    const verified = !!getCachedPasscodeSession_(email);
+    return successResponse({ configured: true, verified });
+  } catch (error) {
+    Logger.log('getPasscodeGateStatus 錯誤：' + error.message);
+    return errorResponse('通行碼狀態檢查失敗：' + error.message);
+  }
+}
+
+/**
+ * 驗證使用者輸入的通行碼，通過後寫入 8 小時效期的通行碼 Session
+ * 不呼叫 checkPermission()：此為「進入系統前」關卡，尚無角色概念
+ *
+ * @param {string} code - 使用者輸入的通行碼
+ * @returns {string} JSON — { success, data: { verified: true } } 或 { success:false, error }
+ */
+function verifyPasscode(code) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (!email) {
+      return errorResponse('無法取得登入 Email，請確認已使用組織 Google 帳號登入。');
+    }
+
+    const expected = getConfiguredPasscode_();
+    if (!expected) {
+      return errorResponse('系統尚未設定通行碼，請聯絡系統管理員設定。');
+    }
+
+    const submitted = String(code || '').trim();
+    if (!submitted) {
+      return errorResponse('請輸入通行碼');
+    }
+    if (submitted !== expected) {
+      Logger.log(`verifyPasscode：通行碼錯誤，email=${email}`);
+      return errorResponse('通行碼錯誤，請重新輸入');
+    }
+
+    savePasscodeSession_(email);
+    return successResponse({ verified: true });
+  } catch (error) {
+    Logger.log('verifyPasscode 錯誤：' + error.message);
+    return errorResponse('通行碼驗證失敗：' + error.message);
   }
 }
 
@@ -341,6 +415,55 @@ function saveSession(email, userInfo) {
 }
 
 // =============================================
+// 通行碼關卡（Private）
+// =============================================
+
+/** Script Properties 是否已設定全站通行碼 */
+function isPasscodeConfigured_() {
+  return !!getConfiguredPasscode_();
+}
+
+/** 讀取 Script Properties 中設定的通行碼（已 trim，未設定回傳空字串） */
+function getConfiguredPasscode_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(SITE_PASSCODE_KEY);
+  return raw ? String(raw).trim() : '';
+}
+
+/**
+ * 從 PropertiesService 讀取快取的通行碼 Session
+ * 若過期則返回 null（由呼叫者決定是否要求重新輸入）
+ *
+ * @param {string} email
+ * @returns {Object|null}
+ */
+function getCachedPasscodeSession_(email) {
+  const props = PropertiesService.getUserProperties();
+  const raw = props.getProperty(PASSCODE_SESSION_KEY_PREFIX + email);
+  if (!raw) return null;
+
+  const session = JSON.parse(raw);
+  if (Date.now() > session.expiresAt) {
+    props.deleteProperty(PASSCODE_SESSION_KEY_PREFIX + email);
+    return null;
+  }
+  return session;
+}
+
+/**
+ * 將通行碼 Session 存入 PropertiesService（與角色 Session 完全分開存放）
+ *
+ * @param {string} email
+ */
+function savePasscodeSession_(email) {
+  const session = {
+    verifiedAt: Date.now(),
+    expiresAt: Date.now() + PASSCODE_SESSION_TTL_MS,
+  };
+  PropertiesService.getUserProperties()
+    .setProperty(PASSCODE_SESSION_KEY_PREFIX + email, JSON.stringify(session));
+}
+
+// =============================================
 // 輔助：角色中文標籤
 // =============================================
 
@@ -371,4 +494,5 @@ const AuthService = {
   determineRole,
   hasPermission,
   getRoleLabel,
+  getPasscodeGateStatus,
 };
