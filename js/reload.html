@@ -10,7 +10,7 @@ const Reload = (() => {
     if (!btn) return;
 
     btn.onclick = async () => {
-      const confirmed = window.confirm('要清除目前帳號的 8 小時權限快取並重新載入頁面嗎？');
+      const confirmed = window.confirm('要清除目前帳號的權限快取與通行碼驗證狀態並重新載入頁面嗎？重新載入後需要重新輸入通行碼。');
       if (!confirmed) return;
 
       const originalText = btn.textContent;
@@ -19,7 +19,7 @@ const Reload = (() => {
 
       try {
         await API.clearCurrentUserSession();
-        Components.showToast('權限快取已清除，正在重新載入...', 'success');
+        Components.showToast('權限快取與通行碼驗證狀態已清除，正在重新載入...', 'success');
         window.setTimeout(() => location.reload(), 300);
       } catch (error) {
         API.handleError(error);

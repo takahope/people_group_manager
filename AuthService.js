@@ -204,13 +204,20 @@ function clearCurrentUserSession() {
     const email = Session.getActiveUser().getEmail();
     if (!email) return errorResponse('未登入，無法清除 Session');
 
-    const key = SESSION_KEY_PREFIX + email;
     const props = PropertiesService.getUserProperties();
+
+    const key = SESSION_KEY_PREFIX + email;
     const existed = !!props.getProperty(key);
     props.deleteProperty(key);
 
+    // 一併清除通行碼 Session，強制下次載入頁面時重新輸入通行碼
+    const passcodeKey = PASSCODE_SESSION_KEY_PREFIX + email;
+    const passcodeExisted = !!props.getProperty(passcodeKey);
+    props.deleteProperty(passcodeKey);
+
     return successResponse({
       cleared: existed,
+      clearedPasscode: passcodeExisted,
       email,
     });
   } catch (error) {
