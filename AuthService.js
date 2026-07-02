@@ -138,7 +138,9 @@ function verifyPasscode(code) {
     }
 
     savePasscodeSession_(email);
-    return successResponse({ verified: true });
+    // 回傳 Web App 網址供前端以 window.open(url, '_top') 整頁導向，
+    // 避免在 GAS 沙盒 iframe 內 location.reload() 造成白屏
+    return successResponse({ verified: true, appUrl: ScriptApp.getService().getUrl() });
   } catch (error) {
     Logger.log('verifyPasscode 錯誤：' + error.message);
     return errorResponse('通行碼驗證失敗：' + error.message);
@@ -219,6 +221,7 @@ function clearCurrentUserSession() {
       cleared: existed,
       clearedPasscode: passcodeExisted,
       email,
+      appUrl: ScriptApp.getService().getUrl(),
     });
   } catch (error) {
     Logger.log('clearCurrentUserSession 錯誤：' + error.message);

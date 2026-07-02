@@ -18,9 +18,14 @@ const Reload = (() => {
       btn.textContent = '清除中...';
 
       try {
-        await API.clearCurrentUserSession();
+        const data = await API.clearCurrentUserSession();
         Components.showToast('權限快取與通行碼驗證狀態已清除，正在重新載入...', 'success');
-        window.setTimeout(() => location.reload(), 300);
+        // 以 Web App 網址整頁導向（_top），避免沙盒 iframe reload 白屏
+        if (data && data.appUrl) {
+          window.open(data.appUrl, '_top');
+        } else {
+          window.setTimeout(() => location.reload(), 300);
+        }
       } catch (error) {
         API.handleError(error);
         btn.disabled = false;

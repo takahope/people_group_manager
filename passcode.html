@@ -96,7 +96,13 @@
             const result = (typeof raw === 'string') ? JSON.parse(raw) : raw;
             if (result && result.success) {
               btn.textContent = '驗證成功，載入中...';
-              location.reload();
+              // 以 Web App 網址整頁導向（_top），避免沙盒 iframe reload 白屏
+              const appUrl = result.data && result.data.appUrl;
+              if (appUrl) {
+                window.open(appUrl, '_top');
+              } else {
+                window.setTimeout(() => location.reload(), 300);
+              }
             } else {
               btn.disabled = false;
               btn.textContent = '送出';
