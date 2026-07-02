@@ -25,56 +25,71 @@ function addPerson(personObj) {
   const validationError = validatePersonObj(personObj);
   if (validationError) return errorResponse(validationError);
 
-  // 確認 Email 不重複
-  if (DataService.findPersonByEmail(personObj.email)) {
+  // 確認 Email 不重複（email 為空的離職人員跳過，避免空字串誤 match 空信箱列）
+  if (personObj.email && DataService.findPersonByEmail(personObj.email)) {
     return errorResponse(`信箱 ${personObj.email} 已存在於人員主檔`);
   }
 
   DataService.appendPersonnel(personObj);
-  DataService.appendAuditLog('ADD', `人員: ${personObj.email}`, `姓名: ${personObj.name}`);
+  DataService.appendAuditLog('ADD', `人員: ${personObj.email || `（無信箱）${personObj.name}`}`, `姓名: ${personObj.name}`);
 
   return successResponse({ message: '人員新增成功', email: personObj.email });
 }
 
 /**
  * 更新 Sheet 1 指定人員資料
- * 
- * @param {string} email
- * @param {{name, status}} personObj
+ *
+ * @param {string} email 原信箱；無信箱人員傳空字串，改由 personObj.originalName 定位
+ * @param {{name, status, originalName}} personObj originalName 僅作定位鍵，不寫入 Sheet
  * @returns {string} JSON 回應
  */
 function updatePerson(email, personObj) {
   if (!checkPermission('personnel.write')) return errorResponse('無編輯人員的權限');
-  if (!email) return errorResponse('缺少 email 參數');
 
-  const updated = DataService.updatePersonnelByEmail(email, { email, ...personObj });
-  if (!updated) return errorResponse(`找不到人員：${email}`);
+  const obj = Object.assign({}, personObj);
+  const originalName = String(obj.originalName || '').trim();
+  delete obj.originalName;
+  if (!email && !originalName) return errorResponse('缺少 email 參數');
 
-  DataService.appendAuditLog('UPDATE', `人員: ${email}`, JSON.stringify(personObj));
+  // 無信箱人員在編輯時補上信箱，需防與既有信箱撞號
+  if (!email && obj.email && DataService.findPersonByEmail(obj.email)) {
+    return errorResponse(`信箱 ${obj.email} 已存在於人員主檔`);
+  }
+
+  // 表單送入的新信箱優先（支援修改信箱），未送則沿用原信箱
+  const finalEmail = String(obj.email || '').trim() || email;
+  const updated = DataService.updatePersonnelByEmail(email, { ...obj, email: finalEmail }, originalName);
+  if (!updated) return errorResponse(`找不到人員：${email || `（無信箱）${originalName}`}`);
+
+  DataService.appendAuditLog('UPDATE', `人員: ${email || `（無信箱）${originalName}`}`, JSON.stringify(obj));
   return successResponse({ message: '人員更新成功' });
 }
 
 /**
  * 刪除 Sheet 1 指定人員
  * 刪除前檢查 Sheet 3 是否仍有職務配置
- * 
+ *
  * @param {string} email
+ * @param {string} [name] email 為空時（無信箱的離職人員）以姓名定位
  * @returns {string} JSON 回應
  */
-function deletePerson(email) {
+function deletePerson(email, name) {
   if (!checkPermission('personnel.delete')) return errorResponse('無刪除人員的權限');
-  if (!email) return errorResponse('缺少 email 參數');
+  const fallbackName = String(name || '').trim();
+  if (!email && !fallbackName) return errorResponse('缺少 email 參數');
 
-  // 安全機制：確認 Sheet 3 無殘留職務配置
-  const assignments = DataService.getSheet3DataByEmail(email);
-  if (assignments.length > 0) {
-    return errorResponse(`此人員仍有 ${assignments.length} 筆職務配置，請先刪除職務配置後再刪除人員`);
+  // 安全機制：確認 Sheet 3 無殘留職務配置（無信箱者不會有職務配置，跳過）
+  if (email) {
+    const assignments = DataService.getSheet3DataByEmail(email);
+    if (assignments.length > 0) {
+      return errorResponse(`此人員仍有 ${assignments.length} 筆職務配置，請先刪除職務配置後再刪除人員`);
+    }
   }
 
-  const deleted = DataService.deletePersonnelByEmail(email);
-  if (!deleted) return errorResponse(`找不到人員：${email}`);
+  const deleted = DataService.deletePersonnelByEmail(email, fallbackName);
+  if (!deleted) return errorResponse(`找不到人員：${email || `（無信箱）${fallbackName}`}`);
 
-  DataService.appendAuditLog('DELETE', `人員: ${email}`, '');
+  DataService.appendAuditLog('DELETE', `人員: ${email || `（無信箱）${fallbackName}`}`, '');
   return successResponse({ message: '人員刪除成功' });
 }
 
@@ -443,16 +458,23 @@ function importPersonnelBatch(records) {
 
   list.forEach(rec => {
     const email = String(rec && rec.email || '').trim();
-    const key = email.toLowerCase();
-    if (key && seen.has(key)) {
-      errors.push({ email, reason: '檔案內信箱重複' });
+    const name = String(rec && rec.name || '').trim();
+    const displayKey = email || `（無信箱）${name}`;
+    // 統一去重鍵：有信箱用信箱，無信箱（離職人員）用姓名
+    const key = email ? email.toLowerCase() : (name ? 'name:' + name.toLowerCase() : '');
+    if (!key) {
+      errors.push({ email: '（無法辨識）', reason: '缺少信箱與姓名' });
       return;
     }
-    if (key) seen.add(key);
+    if (seen.has(key)) {
+      errors.push({ email: displayKey, reason: email ? '檔案內信箱重複' : '檔案內姓名重複（無信箱）' });
+      return;
+    }
+    seen.add(key);
 
     const normalized = {
       email: email,
-      name: String(rec.name || '').trim(),
+      name: name,
       status: String(rec.status || '').trim(),
       phone: String(rec.phone || '').trim(),
       mobile: String(rec.mobile || '').trim(),
@@ -462,7 +484,7 @@ function importPersonnelBatch(records) {
 
     const validationError = validatePersonObj(normalized);
     if (validationError) {
-      errors.push({ email: email || '(空白信箱)', reason: validationError });
+      errors.push({ email: displayKey, reason: validationError });
       return;
     }
     valid.push(normalized);
@@ -530,8 +552,12 @@ function normalizeDateValue_(v) {
  * @returns {string|null} 錯誤訊息或 null（驗證通過）
  */
 function validatePersonObj(personObj) {
-  if (!personObj.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personObj.email)) {
-    return '信箱格式不正確';
+  // 信箱可空，但僅限已離職者（需有離職日期）；有信箱仍須通過格式驗證
+  const email = String(personObj.email || '').trim();
+  if (email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '信箱格式不正確';
+  } else if (!personObj.leaveDate) {
+    return '無信箱人員僅限已離職者（需同時有姓名與離職日期）';
   }
   if (!personObj.name || personObj.name.length > 50) {
     return '姓名為必填且不超過 50 字元';

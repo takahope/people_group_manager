@@ -635,17 +635,17 @@ const Pages = {
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
     const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
     const statusOptions = [
-      { key: '全部', label: '全部', type: 'all' },
+      { key: '在職', label: '在職', type: 'derived' },
       { key: '在勤', label: '在勤', type: 'status' },
       { key: '育嬰假', label: '育嬰假', type: 'status' },
       { key: '休假', label: '休假', type: 'status' },
       { key: '留職停薪', label: '留職停薪', type: 'status' },
+      { key: '離職', label: '離職', type: 'status' },
       { key: '合作單位', label: '合作單位', type: 'status' },
       { key: '委外廠商', label: '委外廠商', type: 'status' },
       { key: '外派人員', label: '外派人員', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
-      { key: '離職', label: '離職', type: 'status' },
-      { key: '在職', label: '在職', type: 'derived' },
+      { key: '全部', label: '全部', type: 'all' },
     ];
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
@@ -750,9 +750,15 @@ const Pages = {
             '倫理委員會': 'badge--warning',
           }[status] || 'badge--neutral');
         },
-        findByEmail(email) {
+        findByIdentity(email, name) {
           const normalized = String(email || '').trim().toLowerCase();
-          return this.data.find(item => String(item.email || '').trim().toLowerCase() === normalized) || null;
+          if (normalized) {
+            return this.data.find(item => String(item.email || '').trim().toLowerCase() === normalized) || null;
+          }
+          // 無信箱的離職人員：以「信箱空白＋姓名相符」定位
+          const nameKey = String(name || '').trim();
+          if (!nameKey) return null;
+          return this.data.find(item => !String(item.email || '').trim() && String(item.name || '').trim() === nameKey) || null;
         },
         matchesActiveStatus(person) {
           if (this.activeStatus === '全部') return true;
@@ -813,7 +819,7 @@ const Pages = {
               },
             ],
             actions: this.canWrite ? (row) => `
-              <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}')">編輯</button>
+              <button class="btn btn--ghost btn--sm" onclick="Pages._editPerson('${row.email}','${row.name}')">編輯</button>
               ${this.canDelete ? `<button class="btn btn--danger btn--sm" style="margin-left:.25rem" onclick="Pages._deletePerson('${row.email}','${row.name}')">刪除</button>` : ''}
             ` : null,
             onRowClick: null,
@@ -1049,12 +1055,22 @@ const Pages = {
   _upsertPersonnelState(person, mode = 'update') {
     const state = Pages._personnelState;
     if (!state || !person) return;
-    const normalizedEmail = String(person.email || '').trim().toLowerCase();
-    const existingIndex = state.data.findIndex(item => String(item.email || '').trim().toLowerCase() === normalizedEmail);
+    const { originalName, ...personData } = person;
+    const normalizedEmail = String(personData.email || '').trim().toLowerCase();
+    let existingIndex = normalizedEmail
+      ? state.data.findIndex(item => String(item.email || '').trim().toLowerCase() === normalizedEmail)
+      : -1;
+    // 無信箱人員（或編輯時補上信箱）：以「信箱空白＋原姓名」定位既有列
+    if (existingIndex < 0 && (!normalizedEmail || originalName)) {
+      const matchName = String(originalName || personData.name || '').trim();
+      if (matchName) {
+        existingIndex = state.data.findIndex(item => !String(item.email || '').trim() && String(item.name || '').trim() === matchName);
+      }
+    }
     if (existingIndex >= 0) {
-      state.data.splice(existingIndex, 1, { ...state.data[existingIndex], ...person });
+      state.data.splice(existingIndex, 1, { ...state.data[existingIndex], ...personData });
     } else if (mode === 'add') {
-      state.data.unshift({ ...person });
+      state.data.unshift({ ...personData });
     }
     state.refreshView();
   },
@@ -1063,6 +1079,7 @@ const Pages = {
     const prefetchState = Pages._personnelAssignmentPrefetchState;
     if (!prefetchState || !person || !prefetchState.byEmail) return;
     const normalizedEmail = String(person.email || '').trim().toLowerCase();
+    if (!normalizedEmail) return; // 無信箱人員不會有職務快取
     const cachedPayload = prefetchState.byEmail.get(normalizedEmail);
     if (!cachedPayload || !cachedPayload.person) return;
     cachedPayload.person = {
@@ -1108,12 +1125,14 @@ const Pages = {
         message: isEdit ? '儲存人員資料中...' : '新增人員資料中...',
         hint: '系統正在同步資料',
       });
+      // 編輯時帶 originalName：無信箱人員（email 空）後端與本地皆以原姓名定位資料列
+      const payload = isEdit ? { ...formDraft, originalName: existingPerson.name } : formDraft;
       try {
         progress.start();
-        if (isEdit) { await API.updatePerson(existingPerson.email, formDraft); }
+        if (isEdit) { await API.updatePerson(existingPerson.email, payload); }
         else        { await API.addPerson(formDraft); }
         await progress.complete();
-        Pages._upsertPersonnelState(formDraft, isEdit ? 'update' : 'add');
+        Pages._upsertPersonnelState(payload, isEdit ? 'update' : 'add');
         Pages._syncPersonnelAssignmentCache(formDraft);
         Components.showToast(isEdit ? '人員更新成功' : '人員新增成功', 'success');
         return true;
@@ -1312,15 +1331,15 @@ const Pages = {
         <label class="form-label required">選擇檔案（CSV 或 Excel）</label>
         <input type="file" id="personnelImportFile" class="form-control" accept=".csv,.xlsx,.xls">
         <p style="font-size:.82rem;color:#64748b;margin-top:.5rem;line-height:1.5">
-          檔案第一列須為欄位標題，且必須包含「信箱」欄。可包含欄位：信箱、姓名、員工狀態、電話、手機、到職日期、離職日期。<br>
-          比對以信箱為單一事實來源；空白欄不會覆蓋既有資料。
+          檔案第一列須為欄位標題，且必須包含「信箱」欄；離職人員歷史檔可無信箱欄，但每列須有「姓名」與「離職日期」。可包含欄位：信箱、姓名、員工狀態、電話、手機、到職日期、離職日期。<br>
+          比對以信箱為單一事實來源（無信箱的離職人員改以姓名比對）；空白欄不會覆蓋既有資料。
         </p>
         <div id="personnelImportFileInfo" style="font-size:.85rem;color:#334155;margin-top:.5rem"></div>
       </div>`;
 
     Components.showModal('匯入人員 — 選擇檔案', body, async () => {
       if (!parsedRecords || !parsedRecords.length) {
-        Components.showToast('請先選擇有效的檔案（至少一筆含信箱的資料）', 'warning');
+        Components.showToast('請先選擇有效的檔案（每筆需含信箱，或姓名＋離職日期）', 'warning');
         return false;
       }
       const diff = await Pages._comparePersonnelImport(parsedRecords);
@@ -1423,7 +1442,9 @@ const Pages = {
       const key = Pages._personnelHeaderAlias(h);
       if (key && colIndex[key] === undefined) colIndex[key] = idx;
     });
-    if (colIndex.email === undefined) throw new Error('找不到「信箱」欄，請確認第一列標題');
+    if (colIndex.email === undefined && colIndex.leaveDate === undefined) {
+      throw new Error('找不到「信箱」欄，請確認第一列標題（離職人員歷史檔可無信箱欄，但須有「離職日期」欄）');
+    }
     const cellAt = (row, field) => {
       const idx = colIndex[field];
       return idx === undefined ? '' : String(row[idx] == null ? '' : row[idx]).trim();
@@ -1436,7 +1457,7 @@ const Pages = {
       mobile: cellAt(r, 'mobile'),
       hireDate: Pages._normalizeDateStr(cellAt(r, 'hireDate')),
       leaveDate: Pages._normalizeDateStr(cellAt(r, 'leaveDate')),
-    })).filter(rec => rec.email);
+    })).filter(rec => rec.email || rec.name); // 無信箱但有姓名的列留給比對階段驗證（離職人員可無信箱）
   },
 
   _normalizeDateStr(s) {
@@ -1472,8 +1493,14 @@ const Pages = {
     await progress.complete();
 
     const byEmail = new Map();
+    const byName = new Map(); // nameKey -> [persons]，供無信箱的離職人員以姓名比對
     (Array.isArray(existingList) ? existingList : []).forEach(p => {
-      byEmail.set(String(p.email || '').trim().toLowerCase(), p);
+      const emailKey = String(p.email || '').trim().toLowerCase();
+      if (emailKey) byEmail.set(emailKey, p);
+      const nameKey = String(p.name || '').trim().toLowerCase();
+      if (!nameKey) return;
+      if (!byName.has(nameKey)) byName.set(nameKey, []);
+      byName.get(nameKey).push(p);
     });
 
     const statusSet = new Set(Pages._personnelStatusList());
@@ -1483,25 +1510,52 @@ const Pages = {
     const seen = new Set();
 
     imported.forEach(rec => {
-      const email = String(rec.email || '').trim();
-      const key = email.toLowerCase();
-      if (!email || !emailRe.test(email)) {
-        result.errors.push({ email: email || '(空白信箱)', reason: '信箱格式不正確' });
+      let email = String(rec.email || '').trim();
+      const name = String(rec.name || '').trim();
+      const displayKey = () => email || `（無信箱）${name}`;
+
+      // 身分解析：有信箱走信箱比對；無信箱（僅限離職人員）以姓名比對現有名單
+      let existing = null;
+      if (email) {
+        if (!emailRe.test(email)) {
+          result.errors.push({ email: displayKey(), reason: '信箱格式不正確' });
+          return;
+        }
+        existing = byEmail.get(email.toLowerCase()) || null;
+      } else {
+        if (!name || !rec.leaveDate) {
+          result.errors.push({ email: displayKey() || '(空白信箱)', reason: '無信箱人員僅限已離職者（需同時有姓名與離職日期）' });
+          return;
+        }
+        const matches = byName.get(name.toLowerCase()) || [];
+        if (matches.length > 1) {
+          result.errors.push({ email: displayKey(), reason: `現有名單中有 ${matches.length} 位同名人員，請人工處理` });
+          return;
+        }
+        if (matches.length === 1) {
+          existing = matches[0];
+          email = String(existing.email || '').trim(); // 沿用既有信箱（可能仍為空 → 後端以姓名定位更新）
+        }
+      }
+
+      // 統一去重鍵：解析後的信箱，或（仍無信箱時）姓名
+      const key = email ? email.toLowerCase() : 'name:' + name.toLowerCase();
+      if (seen.has(key)) {
+        result.errors.push({ email: displayKey(), reason: email ? '檔案內信箱重複' : '檔案內姓名重複（無信箱）' });
         return;
       }
-      if (seen.has(key)) { result.errors.push({ email, reason: '檔案內信箱重複' }); return; }
       seen.add(key);
 
-      const existing = byEmail.get(key);
       if (!existing) {
         const problems = [];
-        if (!rec.name) problems.push('缺少姓名');
+        if (!name) problems.push('缺少姓名');
         if (rec.status && !statusSet.has(rec.status)) problems.push('員工狀態不合法');
-        if (problems.length) { result.errors.push({ email, reason: problems.join('、') }); return; }
+        if (problems.length) { result.errors.push({ email: displayKey(), reason: problems.join('、') }); return; }
         result.news.push({
           email,
+          displayKey: displayKey(),
           final: {
-            email, name: rec.name, status: rec.status || '在勤',
+            email, name: name, status: rec.status || '在勤',
             phone: rec.phone, mobile: rec.mobile, hireDate: rec.hireDate, leaveDate: rec.leaveDate,
             action: 'add',
           },
@@ -1530,11 +1584,11 @@ const Pages = {
       if (!fillFields.length && !conflictFields.length) { result.unchanged++; return; }
 
       if (conflictFields.length) {
-        result.conflicts.push({ email, name: existing.name || '', existing: finalBase, fillFields, conflictFields });
+        result.conflicts.push({ email, displayKey: displayKey(), name: existing.name || '', existing: finalBase, fillFields, conflictFields });
       } else {
         const final = Object.assign({}, finalBase, { action: 'update' });
         fillFields.forEach(f => { final[f.key] = f.newVal; });
-        result.fills.push({ email, name: existing.name || '', fillFields, final });
+        result.fills.push({ email, displayKey: displayKey(), name: existing.name || '', fillFields, final });
       }
     });
     return result;
@@ -1555,12 +1609,12 @@ const Pages = {
     if (c.n) {
       parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">新增人員（${c.n}）</h3>`);
       parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7">' +
-        diff.news.map(n => `<li>${esc(n.final.email)}　${esc(n.final.name)}　<span class="badge badge--neutral">${esc(n.final.status)}</span></li>`).join('') + '</ul>');
+        diff.news.map(n => `<li>${esc(n.displayKey || n.final.email)}　${esc(n.final.name)}　<span class="badge badge--neutral">${esc(n.final.status)}</span></li>`).join('') + '</ul>');
     }
     if (c.u) {
       parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">自動填補空欄（${c.u}）</h3>`);
       parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7">' +
-        diff.fills.map(f => `<li>${esc(f.email)}　${esc(f.name)}：${f.fillFields.map(x => `${esc(x.label)}→${esc(x.newVal)}`).join('、')}</li>`).join('') + '</ul>');
+        diff.fills.map(f => `<li>${esc(f.displayKey || f.email)}　${esc(f.name)}：${f.fillFields.map(x => `${esc(x.label)}→${esc(x.newVal)}`).join('、')}</li>`).join('') + '</ul>');
     }
     if (c.k) {
       parts.push(`<div style="display:flex;justify-content:space-between;align-items:center;margin:.75rem 0 .35rem">
@@ -1572,7 +1626,7 @@ const Pages = {
       </div>`);
       parts.push(diff.conflicts.map((cf, i) => `
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .75rem;margin-bottom:.5rem">
-          <div style="font-weight:600;margin-bottom:.35rem;font-size:.9rem">${esc(cf.email)}　${esc(cf.name)}</div>
+          <div style="font-weight:600;margin-bottom:.35rem;font-size:.9rem">${esc(cf.displayKey || cf.email)}　${esc(cf.name)}</div>
           ${cf.conflictFields.map(f => `<div style="font-size:.83rem;line-height:1.6">${esc(f.label)}：<span style="color:#b91c1c">${esc(f.oldVal || '(空白)')}</span> → <span style="color:#047857">${esc(f.newVal)}</span></div>`).join('')}
           ${cf.fillFields.length ? `<div style="font-size:.78rem;color:#64748b;margin-top:.25rem">另自動填補：${cf.fillFields.map(x => esc(x.label)).join('、')}</div>` : ''}
           <div style="margin-top:.5rem;display:flex;gap:1.2rem;font-size:.85rem">
@@ -1674,12 +1728,12 @@ const Pages = {
     }
   },
 
-  async _editPerson(email) {
+  async _editPerson(email, name) {
     const pageCtx = Router.getActivePageContext();
     const state = Pages._personnelState;
     const backdrop = document.getElementById('modalBackdrop');
     if (!pageCtx || !pageCtx.isActive()) return;
-    const person = state && state.navId === pageCtx.navId ? state.findByEmail(email) : null;
+    const person = state && state.navId === pageCtx.navId ? state.findByIdentity(email, name) : null;
     if (person) {
       Pages._showPersonForm(person);
       return;
@@ -1710,7 +1764,10 @@ const Pages = {
     try {
       const data = await API.getAllPersonnel();
       if (!pageCtx.isActive()) return;
-      const latestPerson = (data || []).find(item => String(item.email || '').trim().toLowerCase() === String(email || '').trim().toLowerCase());
+      const normalizedEmail = String(email || '').trim().toLowerCase();
+      const latestPerson = normalizedEmail
+        ? (data || []).find(item => String(item.email || '').trim().toLowerCase() === normalizedEmail)
+        : (data || []).find(item => !String(item.email || '').trim() && String(item.name || '').trim() === String(name || '').trim());
       await progress.complete();
       if (backdrop?.hidden) return;
       progress.stop();
@@ -1735,11 +1792,11 @@ const Pages = {
 
   _deletePerson(email, name) {
     Components.showModal('確認刪除人員',
-      `<p>確認要刪除 <strong>${Components.escapeHtml(name)}</strong>（${Components.escapeHtml(email)}）嗎？</p>
+      `<p>確認要刪除 <strong>${Components.escapeHtml(name)}</strong>（${Components.escapeHtml(email || '無信箱')}）嗎？</p>
        <p style="color:var(--color-danger);margin-top:.5rem">⚠ 此操作無法復原，請確認此人員無任何職務配置。</p>`,
       async () => {
         try {
-          await API.deletePerson(email);
+          await API.deletePerson(email, name);
           Components.showToast('人員刪除成功', 'success');
           location.reload();
         } catch (err) { API.handleError(err); }

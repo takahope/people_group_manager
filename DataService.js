@@ -327,6 +327,21 @@ function personnelRowFromObj_(personObj) {
 }
 
 /**
+ * 人員列身分比對：email 非空時嚴格比對信箱；
+ * email 為空時（無信箱的離職人員）比對「信箱空白且姓名相符」的列。
+ *
+ * @param {Array} row Sheet 資料列
+ * @param {string} email
+ * @param {string} name email 為空時的備援鍵（姓名）
+ * @returns {boolean}
+ */
+function personnelRowMatches_(row, email, name) {
+  const rowEmail = String(row[COL.PERSONNEL.EMAIL] || '').trim();
+  if (email) return rowEmail === email;
+  return !rowEmail && String(row[COL.PERSONNEL.NAME] || '').trim() === String(name || '').trim();
+}
+
+/**
  * 新增人員至 Sheet 1
  *
  * @param {{email, name, status, phone, mobile, hireDate, leaveDate}} personObj
@@ -341,15 +356,17 @@ function appendPersonnel(personObj) {
  *
  * @param {string} email
  * @param {Object} personObj
+ * @param {string} [fallbackName] email 為空時以「信箱空白＋姓名相符」定位（無信箱的離職人員）
  * @returns {boolean} 是否找到並更新
  */
-function updatePersonnelByEmail(email, personObj) {
+function updatePersonnelByEmail(email, personObj, fallbackName) {
+  if (!email && !fallbackName) return false;
   const sheet = getSheet(SHEET_NAMES.PERSONNEL);
   const data = sheet.getDataRange().getValues();
 
   // 從第 2 列開始搜尋（第 1 列為標題）
   for (let i = 1; i < data.length; i++) {
-    if (data[i][COL.PERSONNEL.EMAIL] !== email) continue;
+    if (!personnelRowMatches_(data[i], email, fallbackName)) continue;
     const rowNum = i + 1;
     sheet.getRange(rowNum, 1, 1, widthFromColMap(COL.PERSONNEL))
       .setValues([personnelRowFromObj_(personObj)]);
@@ -375,24 +392,46 @@ function bulkImportPersonnel(records) {
   const data = sheet.getDataRange().getValues();
 
   // email(lowercased) → 資料列索引（含標題，故 >=1）
+  // 次索引：信箱空白的列（無信箱的離職人員）以姓名索引，支援再匯入時就地更新
   const indexByEmail = {};
+  const indexByEmptyEmailName = {};
   for (let i = 1; i < data.length; i++) {
     const key = String(data[i][COL.PERSONNEL.EMAIL] || '').trim().toLowerCase();
-    if (key) indexByEmail[key] = i;
+    if (key) {
+      indexByEmail[key] = i;
+      continue;
+    }
+    const nameKey = String(data[i][COL.PERSONNEL.NAME] || '').trim().toLowerCase();
+    if (nameKey && !indexByEmptyEmailName.hasOwnProperty(nameKey)) indexByEmptyEmailName[nameKey] = i;
   }
 
   let updated = 0;
   const newRows = [];
   list.forEach(rec => {
     const key = String(rec.email || '').trim().toLowerCase();
-    if (!key) return;
     const rowArr = personnelRowFromObj_(rec);
-    if (indexByEmail.hasOwnProperty(key)) {
-      data[indexByEmail[key]] = rowArr;
-      updated++;
-    } else {
-      newRows.push(rowArr);
+    if (key) {
+      if (indexByEmail.hasOwnProperty(key)) {
+        data[indexByEmail[key]] = rowArr;
+        updated++;
+      } else {
+        newRows.push(rowArr);
+      }
+      return;
     }
+    // 無信箱 record：以姓名比對既有的空信箱列，命中就地更新、否則追加
+    const nameKey = String(rec.name || '').trim().toLowerCase();
+    if (!nameKey) return;
+    if (indexByEmptyEmailName.hasOwnProperty(nameKey)) {
+      const rowIdx = indexByEmptyEmailName[nameKey];
+      if (rowIdx >= 1) {
+        data[rowIdx] = rowArr;
+        updated++;
+      }
+      return; // rowIdx === -1：本批已追加同名列，略過（上游 seen 已擋，此為防禦）
+    }
+    newRows.push(rowArr);
+    indexByEmptyEmailName[nameKey] = -1;
   });
 
   // 一次寫回既有區塊（含未變動列，內容不變）
@@ -417,16 +456,18 @@ function padRowWidth_(row, width) {
 
 /**
  * 刪除 Sheet 1 中指定 Email 的人員
- * 
+ *
  * @param {string} email
+ * @param {string} [fallbackName] email 為空時以「信箱空白＋姓名相符」定位（無信箱的離職人員）
  * @returns {boolean}
  */
-function deletePersonnelByEmail(email) {
+function deletePersonnelByEmail(email, fallbackName) {
+  if (!email && !fallbackName) return false;
   const sheet = getSheet(SHEET_NAMES.PERSONNEL);
   const data = sheet.getDataRange().getValues();
 
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][COL.PERSONNEL.EMAIL] !== email) continue;
+    if (!personnelRowMatches_(data[i], email, fallbackName)) continue;
     sheet.deleteRow(i + 1);
     return true;
   }

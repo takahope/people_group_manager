@@ -141,7 +141,7 @@ const API = (() => {
     getPersonnelAssignmentDetailsPrefetchData: () => callGAS('getPersonnelAssignmentDetailsPrefetchData'),
     addPerson:        (obj)                  => callGAS('addPerson', obj),
     updatePerson:     (email, obj)           => callGAS('updatePerson', email, obj),
-    deletePerson:     (email)                => callGAS('deletePerson', email),
+    deletePerson:     (email, name)          => callGAS('deletePerson', email, name),
     exportPersonnel:  (opts)                 => callGAS('exportPersonnel', opts),
     importPersonnelBatch: (records)          => callGASWithTimeout('importPersonnelBatch', 120000, records),
     getAssignmentList: ()                    => callGAS('getAssignmentList'),
