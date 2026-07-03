@@ -66,7 +66,7 @@ function doGet(e) {
     const template = HtmlService.createTemplateFromFile('index');
     template.userInfo = JSON.stringify(userInfoResult.data);
     return template.evaluate()
-      .setTitle('HR 管理系統')
+      .setTitle('組織人員狀態查詢')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
