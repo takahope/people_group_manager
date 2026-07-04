@@ -2666,8 +2666,8 @@ const Pages = {
           ${canPrint ? '<button class="btn btn--ghost btn--sm" id="orgPrintBtn">🖨 列印組織成員表</button>' : ''}
           <button class="btn btn--ghost btn--sm" id="orgExportBtn">⬇ 匯出組織圖</button>
           <div style="display:flex;gap:.25rem" id="orgViewToggle">
-            <button class="btn btn--primary btn--sm" data-view="list">☰ 清單</button>
-            <button class="btn btn--ghost btn--sm" data-view="chart">🗂️ 組織圖</button>
+            <button class="btn btn--primary btn--sm" data-view="chart">🗂️ 組織圖</button>
+            <button class="btn btn--ghost btn--sm" data-view="list">☰ 清單</button>
           </div>
         </div>
       </div>
@@ -2704,7 +2704,7 @@ const Pages = {
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
     // 預設進入頁面時顯示「PRE 代表人」起始節點、向下 3 層
-    const orgView = { mode: 'list', type: null, startCode: 'PRE', depth: '3', result: null };
+    const orgView = { mode: 'chart', type: null, startCode: 'PRE', depth: '3', result: null };
     let orgViewFirstLoad = true; // 首次載入沿用上方預設起始節點，之後切換組織類別才重置
 
     let activeMemberRequestId = 0;
