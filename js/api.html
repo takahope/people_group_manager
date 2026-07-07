@@ -136,7 +136,7 @@ const API = (() => {
     checkPermission:  (feature)  => callGAS('checkPermission', feature),
 
     // 人員管理
-    getAllPersonnel:   ()                     => callGAS('getAllPersonnel'),
+    getAllPersonnel:   (opts = null)          => callGAS('getAllPersonnel', opts),
     getPersonnelAssignmentDetails: (email)   => callGAS('getPersonnelAssignmentDetails', email),
     getPersonnelAssignmentDetailsPrefetchData: () => callGAS('getPersonnelAssignmentDetailsPrefetchData'),
     addPerson:        (obj)                  => callGAS('addPerson', obj),
@@ -176,7 +176,7 @@ const API = (() => {
 
     // 儀表板
     getRecentLogs:      ()      => callGAS('getRecentLogs'),
-    getDashboardStats:  ()      => callGAS('getDashboardStats'),
+    getDashboardStats:  (opts = null) => callGAS('getDashboardStats', opts),
     getAppDebugInfo:    ()      => callGAS('getAppDebugInfo'),
   };
 

@@ -192,11 +192,29 @@ function isLeaveDateThisYear_(leaveDate) {
 }
 
 /**
+ * 取得目前使用者直屬部屬的 email 集合（小寫），依 Sheet3 職務配置的直屬主管欄位比對。
+ *
+ * @param {string} currentEmail
+ * @returns {Set<string>}
+ */
+function buildDirectReportEmailSet_(currentEmail) {
+  const normalized = String(currentEmail || '').trim().toLowerCase();
+  return new Set(
+    DataService.getAllAssignments()
+      .filter(item => String(item.managerEmail || '').trim().toLowerCase() === normalized)
+      .map(item => String(item.email || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+/**
  * 取得所有人員（依角色過濾範圍）
  *
+ * @param {{view?:string}} options
+ *   view：主管（personnel.read.dept）可傳 'dept' 切換為部門視角（僅直屬部屬）；其餘角色忽略此參數。
  * @returns {string} JSON 回應
  */
-function getAllPersonnel() {
+function getAllPersonnel(options) {
   try {
     const email = Session.getActiveUser().getEmail();
     const representativeEmails = buildRepresentativeEmailSet_();
@@ -210,10 +228,14 @@ function getAllPersonnel() {
       return successResponse(decoratePersonnelList(DataService.getSheet1Data()));
     }
 
-    // 主管：僅「在職」5 種子狀態 + 今年離職者（合作單位/委外廠商/倫理委員會一律排除），全公司範圍，隱藏到職/離職日期
+    // 主管：僅「在職」5 種子狀態 + 今年離職者（合作單位/委外廠商/倫理委員會一律排除），隱藏到職/離職日期。
+    // 預設全公司範圍；view='dept' 時再限縮為直屬部屬（部門視角）。
     if (checkPermission('personnel.read.dept')) {
+      const view = String((options && options.view) || '').trim();
+      const directReports = view === 'dept' ? buildDirectReportEmailSet_(email) : null;
       const scoped = DataService.getSheet1Data()
         .filter(p => {
+          if (directReports && !directReports.has(String(p.email || '').trim().toLowerCase())) return false;
           if (p.status === '離職') return isLeaveDateThisYear_(p.leaveDate);
           return ACTIVE_PERSONNEL_STATUSES.indexOf(p.status) >= 0;
         })
@@ -659,12 +681,7 @@ function getAccessiblePersonnelList_() {
   }
 
   if (checkPermission('personnel.read.dept')) {
-    const directReports = new Set(
-      DataService.getAllAssignments()
-        .filter(item => String(item.managerEmail || '').trim().toLowerCase() === currentEmail)
-        .map(item => String(item.email || '').trim().toLowerCase())
-        .filter(Boolean)
-    );
+    const directReports = buildDirectReportEmailSet_(currentEmail);
     return DataService.getSheet1Data().filter(person =>
       directReports.has(String(person.email || '').trim().toLowerCase())
     );

@@ -380,6 +380,13 @@ const Pages = {
   // 儀表板
   // ========================
   async loadDashboard(container, user, pageCtx) {
+    const isMgr = user?.role === 'ROLE-APP-MGR';
+    const kpiSkeleton = Array.from({ length: 8 }).map(() => `
+          <div class="dashboard-kpi-card">
+            <div class="dashboard-kpi-card__label">載入中...</div>
+            <div class="dashboard-kpi-card__value">—</div>
+          </div>`).join('');
+    const logsSkeleton = '<div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div>';
     container.innerHTML = `
       <section class="dashboard-hero">
         <div class="dashboard-hero__intro">
@@ -392,23 +399,35 @@ const Pages = {
         <div class="dashboard-hero__meta">
           <div class="dashboard-hero__meta-label">目前視角</div>
           <div class="dashboard-hero__meta-value" id="dashboardScopeLabel">載入中...</div>
+          ${isMgr ? `<div id="dashboardViewToggle" style="display:flex;gap:.25rem;margin-top:.5rem">
+            <button class="btn btn--primary btn--sm" data-view="dept">部門視角</button>
+            <button class="btn btn--ghost btn--sm" data-view="company">全公司視角</button>
+          </div>` : ''}
         </div>
       </section>
       <div id="dashboardWarnings"></div>
-      <div class="dashboard-kpi-grid" id="statGrid">
-        ${Array.from({ length: 8 }).map(() => `
-          <div class="dashboard-kpi-card">
-            <div class="dashboard-kpi-card__label">載入中...</div>
-            <div class="dashboard-kpi-card__value">—</div>
-          </div>`).join('')}
-      </div>
-      <div id="dashboardLogs" class="dashboard-section card"><div class="card__title">近期異動紀錄</div><div class="page-loading"><div class="spinner"></div></div></div>
+      <div class="dashboard-kpi-grid" id="statGrid">${kpiSkeleton}</div>
+      <div id="dashboardLogs" class="dashboard-section card">${logsSkeleton}</div>
       <div id="dashboardDebug" style="margin-top:1rem"></div>
     `;
 
-    try {
-      const stats = await API.getDashboardStats();
-      if (!pageCtx.isActive()) return;
+    const renderLoadingState = () => {
+      const scopeEl = pageCtx.query('#dashboardScopeLabel');
+      if (scopeEl) scopeEl.textContent = '載入中...';
+      const warningEl = pageCtx.query('#dashboardWarnings');
+      if (warningEl) warningEl.innerHTML = '';
+      const gridEl = pageCtx.query('#statGrid');
+      if (gridEl) gridEl.innerHTML = kpiSkeleton;
+      const logsEl = pageCtx.query('#dashboardLogs');
+      if (logsEl) logsEl.innerHTML = logsSkeleton;
+    };
+
+    let requestSeq = 0;
+    const loadStats = async (view) => {
+      const seq = ++requestSeq;
+      renderLoadingState();
+      const stats = await API.getDashboardStats(isMgr && view === 'company' ? { view: 'company' } : null);
+      if (!pageCtx.isActive() || seq !== requestSeq) return;
       const warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
       const logs = stats.recentLogs || [];
       const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
@@ -425,6 +444,7 @@ const Pages = {
       const scopeLabelMap = {
         full: '全域總覽',
         dept: '部門視角',
+        company: '全公司視角',
         personal: '個人視角',
       };
       if (scopeLabelEl) scopeLabelEl.textContent = scopeLabelMap[stats.scope] || '總覽';
@@ -549,7 +569,7 @@ const Pages = {
               label: '統計範圍',
               value: Components.escapeHtml(scopeLabelMap[stats.scope] || stats.scope || '—'),
               tone: 'neutral',
-              meta: stats.scope === 'dept'
+              meta: (stats.scope === 'dept' || stats.scope === 'company')
                 ? `在勤 ${stats.personnel?.total ?? 0} / 在職 ${stats.personnel?.actualPayrollTotal ?? 0}`
                 : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 外派 ${statusBreakdown['外派人員'] || 0}`,
               compact: true,
@@ -593,6 +613,37 @@ const Pages = {
             <tbody>${rows}</tbody>
           </table>
         </div>`;
+    };
+
+    let currentView = 'dept';
+    const toggleEl = pageCtx.query('#dashboardViewToggle');
+    const setToggleState = (view, disabled) => {
+      if (!toggleEl) return;
+      toggleEl.querySelectorAll('[data-view]').forEach(btn => {
+        btn.className = `btn btn--sm ${btn.dataset.view === view ? 'btn--primary' : 'btn--ghost'}`;
+        btn.disabled = !!disabled;
+      });
+    };
+    if (toggleEl) {
+      toggleEl.querySelectorAll('[data-view]').forEach(btn => {
+        btn.onclick = async () => {
+          if (!pageCtx.isActive()) return;
+          const next = btn.dataset.view;
+          if (next === currentView) return;
+          setToggleState(next, true);
+          try {
+            await loadStats(next);
+            currentView = next;
+          } catch (err) {
+            API.handleError(err);
+          }
+          if (pageCtx.isActive()) setToggleState(currentView, false);
+        };
+      });
+    }
+
+    try {
+      await loadStats(currentView);
     } catch (err) {
       if (!pageCtx.isActive()) return;
       console.error('loadDashboard 失敗：', err);
@@ -682,6 +733,10 @@ const Pages = {
         </div>
       </section>
       <div id="personnelStatusFilters" class="personnel-status-filters">
+        ${isMgrRole ? `<div id="personnelViewToggle" style="display:inline-flex;gap:.25rem;margin-right:.75rem;padding-right:.75rem;border-right:1px solid var(--color-border)">
+          <button class="btn btn--primary btn--sm" data-view="company">全公司視角</button>
+          <button class="btn btn--ghost btn--sm" data-view="dept">部門視角</button>
+        </div>` : ''}
         ${statusOptions.map(option => `<button class="btn btn--ghost btn--sm" data-status="${option.key}">${option.label}</button>`).join('')}
         <label style="display:inline-flex;align-items:center;gap:.35rem;margin-left:.75rem;font-size:.85rem;color:#64748b;cursor:pointer">
           <input type="checkbox" id="includeRepresentativeToggle"> 包含代表人
@@ -742,6 +797,8 @@ const Pages = {
         canDelete,
         hideDates: isMgrRole,
         includeRepresentative: false,
+        view: 'company',
+        viewLoading: false,
         data: Array.isArray(data) ? data.slice() : [],
         filtered: [],
         activeStatus: '在職',
@@ -892,6 +949,40 @@ const Pages = {
           state.updateFilterButtons();
           state.renderTable();
         };
+      }
+
+      const viewToggle = pageCtx.query('#personnelViewToggle');
+      if (viewToggle) {
+        viewToggle.querySelectorAll('[data-view]').forEach(btn => {
+          btn.onclick = async () => {
+            const state = Pages._personnelState;
+            if (!state || state.navId !== pageCtx.navId) return;
+            const nextView = btn.dataset.view;
+            if (state.viewLoading || nextView === state.view) return;
+            state.viewLoading = true;
+            viewToggle.querySelectorAll('button').forEach(b => { b.disabled = true; });
+            const tableEl = pageCtx.query('#personnelTable');
+            if (tableEl) tableEl.innerHTML = '<div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>';
+            try {
+              const viewData = await API.getAllPersonnel(nextView === 'dept' ? { view: 'dept' } : null);
+              if (!pageCtx.isActive() || Pages._personnelState !== state) return;
+              state.view = nextView;
+              state.data = Array.isArray(viewData) ? viewData.slice() : [];
+              viewToggle.querySelectorAll('[data-view]').forEach(b => {
+                b.className = `btn btn--sm ${b.dataset.view === nextView ? 'btn--primary' : 'btn--ghost'}`;
+              });
+              state.refreshView();
+            } catch (err) {
+              API.handleError(err);
+              if (pageCtx.isActive() && Pages._personnelState === state) state.refreshView();
+            } finally {
+              state.viewLoading = false;
+              if (pageCtx.isActive() && Pages._personnelState === state) {
+                viewToggle.querySelectorAll('button').forEach(b => { b.disabled = false; });
+              }
+            }
+          };
+        });
       }
 
       if (canWrite) {
@@ -1292,7 +1383,6 @@ const Pages = {
         </div>`}
       </div>
       <div class="form-group">
-        <label class="form-label">代表人</label>
         <label style="display:inline-flex;align-items:center;gap:.3rem">
           <input type="checkbox" id="exportIncludeRepresentative" ${Pages._personnelState?.includeRepresentative ? 'checked' : ''}> 包含代表人
         </label>
