@@ -181,8 +181,19 @@ function deleteAssignment(rowIndex) {
 // =============================================
 
 /**
+ * 判斷離職日期是否為今年（Asia/Taipei 時區），用於主管視角的離職人員範圍限制。
+ *
+ * @param {string} leaveDate 儲存格式為 DataService.js formatCellDate_() 產生的 'yyyy/MM/dd'
+ * @returns {boolean}
+ */
+function isLeaveDateThisYear_(leaveDate) {
+  const currentYear = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy');
+  return String(leaveDate || '').indexOf(currentYear) === 0;
+}
+
+/**
  * 取得所有人員（依角色過濾範圍）
- * 
+ *
  * @returns {string} JSON 回應
  */
 function getAllPersonnel() {
@@ -199,13 +210,15 @@ function getAllPersonnel() {
       return successResponse(decoratePersonnelList(DataService.getSheet1Data()));
     }
 
-    // 主管：取轄下成員
+    // 主管：僅「在職」5 種子狀態 + 今年離職者（合作單位/委外廠商/倫理委員會一律排除），全公司範圍，隱藏到職/離職日期
     if (checkPermission('personnel.read.dept')) {
-      const directReports = DataService.getAllAssignments()
-        .filter(a => a.managerEmail === email)
-        .map(a => a.email);
-      const all = DataService.getSheet1Data();
-      return successResponse(decoratePersonnelList(all.filter(p => directReports.includes(p.email))));
+      const scoped = DataService.getSheet1Data()
+        .filter(p => {
+          if (p.status === '離職') return isLeaveDateThisYear_(p.leaveDate);
+          return ACTIVE_PERSONNEL_STATUSES.indexOf(p.status) >= 0;
+        })
+        .map(p => ({ ...p, hireDate: '', leaveDate: '' }));
+      return successResponse(decoratePersonnelList(scoped));
     }
 
     // 一般員工：只取本人

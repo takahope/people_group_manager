@@ -634,20 +634,23 @@ const Pages = {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
     const canExport = canWrite || user?.role === 'ROLE-APP-MGR';
+    const isMgrRole = user?.role === 'ROLE-APP-MGR';
     const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
+    // MGR 只能看到「在職」與「離職（今年）」，合作單位/委外廠商/倫理委員會這三個 tab 對 MGR 一律隱藏
+    const mgrHiddenStatusKeys = new Set(['合作單位', '委外廠商', '倫理委員會']);
     const statusOptions = [
       { key: '在職', label: '在職', type: 'derived' },
       { key: '在勤', label: '在勤', type: 'status' },
       { key: '育嬰假', label: '育嬰假', type: 'status' },
       { key: '休假', label: '休假', type: 'status' },
       { key: '留職停薪', label: '留職停薪', type: 'status' },
-      { key: '離職', label: '離職', type: 'status' },
+      { key: '離職', label: isMgrRole ? '離職（今年）' : '離職', type: 'status' },
       { key: '合作單位', label: '合作單位', type: 'status' },
       { key: '委外廠商', label: '委外廠商', type: 'status' },
       { key: '外派人員', label: '外派人員', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
       { key: '全部', label: '全部', type: 'all' },
-    ];
+    ].filter(option => !isMgrRole || !mgrHiddenStatusKeys.has(option.key));
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
       byEmail: new Map(),
@@ -734,6 +737,7 @@ const Pages = {
         pageCtx,
         canWrite,
         canDelete,
+        hideDates: isMgrRole,
         data: Array.isArray(data) ? data.slice() : [],
         filtered: [],
         activeStatus: '在職',
@@ -793,6 +797,16 @@ const Pages = {
           return this.filtered;
         },
         renderTable() {
+          const dateColumns = this.hideDates ? [] : [
+            { key: 'hireDate',  label: '到職日期', render: (value) => Components.escapeHtml(value || '—') },
+            { key: 'leaveDate', label: '離職日期', render: (value) => Components.escapeHtml(value || '—') },
+            {
+              key: 'tenure',
+              label: '在職時間',
+              sortable: false,
+              render: (_, row) => Components.escapeHtml(Pages._formatTenure(row.hireDate, row.leaveDate)),
+            },
+          ];
           Components.DataTable({
             columns: [
               { key: 'email', label: '信箱' },
@@ -802,14 +816,7 @@ const Pages = {
                 label: '員工狀態',
                 render: (value) => `<span class="badge ${this.statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
               },
-              { key: 'hireDate',  label: '到職日期', render: (value) => Components.escapeHtml(value || '—') },
-              { key: 'leaveDate', label: '離職日期', render: (value) => Components.escapeHtml(value || '—') },
-              {
-                key: 'tenure',
-                label: '在職時間',
-                sortable: false,
-                render: (_, row) => Components.escapeHtml(Pages._formatTenure(row.hireDate, row.leaveDate)),
-              },
+              ...dateColumns,
               {
                 key: 'assignmentView',
                 label: '查看職務',
