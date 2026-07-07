@@ -401,7 +401,7 @@ const Pages = {
           <div class="dashboard-hero__meta-value" id="dashboardScopeLabel">載入中...</div>
           ${isMgr ? `<div id="dashboardViewToggle" style="display:flex;gap:.25rem;margin-top:.5rem">
             <button class="btn btn--primary btn--sm" data-view="dept">部門視角</button>
-            <button class="btn btn--ghost btn--sm" data-view="company">全公司視角</button>
+            <button class="btn btn--ghost btn--sm" data-view="company">組織視角</button>
           </div>` : ''}
         </div>
       </section>
@@ -444,7 +444,7 @@ const Pages = {
       const scopeLabelMap = {
         full: '全域總覽',
         dept: '部門視角',
-        company: '全公司視角',
+        company: '組織視角',
         personal: '個人視角',
       };
       if (scopeLabelEl) scopeLabelEl.textContent = scopeLabelMap[stats.scope] || '總覽';
