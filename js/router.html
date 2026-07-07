@@ -683,6 +683,9 @@ const Pages = {
       </section>
       <div id="personnelStatusFilters" class="personnel-status-filters">
         ${statusOptions.map(option => `<button class="btn btn--ghost btn--sm" data-status="${option.key}">${option.label}</button>`).join('')}
+        <label style="display:inline-flex;align-items:center;gap:.35rem;margin-left:.75rem;font-size:.85rem;color:#64748b;cursor:pointer">
+          <input type="checkbox" id="includeRepresentativeToggle"> 包含代表人
+        </label>
       </div>
       <div id="personnelTable">
         <div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>
@@ -738,6 +741,7 @@ const Pages = {
         canWrite,
         canDelete,
         hideDates: isMgrRole,
+        includeRepresentative: false,
         data: Array.isArray(data) ? data.slice() : [],
         filtered: [],
         activeStatus: '在職',
@@ -766,22 +770,20 @@ const Pages = {
           return this.data.find(item => !String(item.email || '').trim() && String(item.name || '').trim() === nameKey) || null;
         },
         matchesActiveStatus(person) {
+          if (!this.includeRepresentative && person?.isRepresentative) return false;
           if (this.activeStatus === '全部') return true;
           if (this.activeStatus === '在職') {
-            return !excludedPayrollStatuses.has(String(person?.status || '').trim())
-              && !person?.isRepresentative;
+            return !excludedPayrollStatuses.has(String(person?.status || '').trim());
           }
           return String(person?.status || '').trim() === this.activeStatus;
         },
         getStatusCount(statusKey) {
-          if (statusKey === '全部') return this.data.length;
+          const pool = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
+          if (statusKey === '全部') return pool.length;
           if (statusKey === '在職') {
-            return this.data.filter(item =>
-              !excludedPayrollStatuses.has(String(item?.status || '').trim())
-              && !item?.isRepresentative
-            ).length;
+            return pool.filter(item => !excludedPayrollStatuses.has(String(item?.status || '').trim())).length;
           }
-          return this.data.filter(item => String(item?.status || '').trim() === statusKey).length;
+          return pool.filter(item => String(item?.status || '').trim() === statusKey).length;
         },
         applyFilters(searchQuery = this.searchQuery) {
           this.searchQuery = String(searchQuery || '');
@@ -878,6 +880,18 @@ const Pages = {
           };
         });
         Pages._personnelState.updateFilterButtons();
+      }
+
+      const includeRepToggle = pageCtx.query('#includeRepresentativeToggle');
+      if (includeRepToggle) {
+        includeRepToggle.onchange = () => {
+          const state = Pages._personnelState;
+          if (!state || state.navId !== pageCtx.navId) return;
+          state.includeRepresentative = includeRepToggle.checked;
+          state.applyFilters(searchInput.value);
+          state.updateFilterButtons();
+          state.renderTable();
+        };
       }
 
       if (canWrite) {
