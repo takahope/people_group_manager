@@ -734,7 +734,7 @@ const Pages = {
       </section>
       <div id="personnelStatusFilters" class="personnel-status-filters">
         ${isMgrRole ? `<div id="personnelViewToggle" style="display:inline-flex;gap:.25rem;margin-right:.75rem;padding-right:.75rem;border-right:1px solid var(--color-border)">
-          <button class="btn btn--primary btn--sm" data-view="company">全公司視角</button>
+          <button class="btn btn--primary btn--sm" data-view="company">組織視角</button>
           <button class="btn btn--ghost btn--sm" data-view="dept">部門視角</button>
         </div>` : ''}
         ${statusOptions.map(option => `<button class="btn btn--ghost btn--sm" data-status="${option.key}">${option.label}</button>`).join('')}
