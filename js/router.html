@@ -273,6 +273,7 @@ const Router = (() => {
   function updateUserDisplay(user) {
     const nameEl  = document.getElementById('userName');
     const badgeEl = document.getElementById('roleBadge');
+    const reloadBtn = document.getElementById('reloadAuthBtn');
     if (!user) return;
 
     if (nameEl)  nameEl.textContent = user.name || user.email;
@@ -280,6 +281,7 @@ const Router = (() => {
       badgeEl.textContent = user.roleLabel || user.role;
       badgeEl.className = 'role-badge badge ' + roleBadgeClass(user.role);
     }
+    if (reloadBtn) reloadBtn.hidden = user.role !== 'ROLE-APP-ADMIN';
   }
 
   function roleBadgeClass(role) {
