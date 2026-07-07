@@ -1292,6 +1292,12 @@ const Pages = {
         </div>`}
       </div>
       <div class="form-group">
+        <label class="form-label">代表人</label>
+        <label style="display:inline-flex;align-items:center;gap:.3rem">
+          <input type="checkbox" id="exportIncludeRepresentative" ${Pages._personnelState?.includeRepresentative ? 'checked' : ''}> 包含代表人
+        </label>
+      </div>
+      <div class="form-group">
         <label class="form-label">檔案格式</label>
         <div style="display:flex;gap:1rem">
           <label style="display:inline-flex;align-items:center;gap:.3rem"><input type="radio" name="exportFormat" value="csv" checked> CSV</label>
@@ -1302,6 +1308,7 @@ const Pages = {
     Components.showModal('匯出人員資料', renderBody(), async () => {
       const selCols = Array.from(document.querySelectorAll('.export-col')).filter(x => x.checked).map(x => x.value);
       const selStatuses = Array.from(document.querySelectorAll('.export-status')).filter(x => x.checked).map(x => x.value);
+      const includeRepresentative = !!(document.getElementById('exportIncludeRepresentative') || {}).checked;
       const formatEl = document.querySelector('input[name="exportFormat"]:checked');
       const format = formatEl ? formatEl.value : 'csv';
       if (!selCols.length) { Components.showToast('請至少選擇一個欄位', 'warning'); return false; }
@@ -1311,7 +1318,7 @@ const Pages = {
       });
       try {
         progress.start();
-        const result = await API.exportPersonnel({ columns: selCols, statuses: selStatuses });
+        const result = await API.exportPersonnel({ columns: selCols, statuses: selStatuses, includeRepresentative });
         await progress.complete();
         const headers = (result && result.headers) || [];
         const rows = (result && result.rows) || [];

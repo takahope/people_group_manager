@@ -421,9 +421,10 @@ const PERSONNEL_EXPORT_LIMITED_KEYS_ = ['email', 'name', 'status'];
 /**
  * 匯出人員資料（回結構化資料，前端據此產 CSV 或 xlsx）。
  *
- * @param {{columns?:string[], statuses?:string[]}} options
+ * @param {{columns?:string[], statuses?:string[], includeRepresentative?:boolean}} options
  *   columns：要匯出的欄位 key（信箱恆含）；空＝全部欄位。
  *   statuses：要匯出的員工狀態；空＝全部狀態。
+ *   includeRepresentative：是否包含代表人；未指定＝包含。
  * @returns {string} JSON 回應 { headers:[中文標題], keys:[欄位key], rows:[[...]] }
  */
 function exportPersonnel(options) {
@@ -457,6 +458,10 @@ function exportPersonnel(options) {
   let list = DataService.getSheet1Data();
   if (statusFilter && statusFilter.size) {
     list = list.filter(p => statusFilter.has(p.status));
+  }
+  if (opts.includeRepresentative === false) {
+    const representativeEmails = buildRepresentativeEmailSet_();
+    list = list.filter(p => !representativeEmails.has(String(p.email || '').trim().toLowerCase()));
   }
 
   const labelByKey = {};
