@@ -633,6 +633,7 @@ const Pages = {
   async loadPersonnel(container, user, pageCtx) {
     const canWrite  = user?.role === 'ROLE-APP-ADMIN' || user?.role === 'ROLE-APP-HR';
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
+    const canExport = canWrite || user?.role === 'ROLE-APP-MGR';
     const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
     const statusOptions = [
       { key: '在職', label: '在職', type: 'derived' },
@@ -673,7 +674,7 @@ const Pages = {
             </div>
           </label>
           ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="importPersonBtn">⬇ 匯入</button>' : ''}
-          ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬆ 匯出</button>' : ''}
+          ${canExport ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬆ 匯出</button>' : ''}
           ${canWrite ? '<button class="btn btn--primary personnel-toolbar__action" id="addPersonBtn">＋ 新增人員</button>' : ''}
         </div>
       </section>
@@ -881,9 +882,11 @@ const Pages = {
         if (importBtn) {
           importBtn.onclick = () => Pages._showPersonnelImport();
         }
+      }
+      if (canExport) {
         const exportBtn = pageCtx.query('#exportPersonBtn');
         if (exportBtn) {
-          exportBtn.onclick = () => Pages._showPersonnelExport();
+          exportBtn.onclick = () => Pages._showPersonnelExport({ restricted: !canWrite });
         }
       }
     } catch (err) {
@@ -1224,8 +1227,17 @@ const Pages = {
     syncGroupFromChildren();
   },
 
-  _showPersonnelExport() {
-    const columns = Pages._personnelExportColumns();
+  // 主管受限匯出固定欄位，須與 PersonnelAPI.js 的 PERSONNEL_EXPORT_LIMITED_KEYS_ 同步。
+  _PERSONNEL_EXPORT_LIMITED_KEYS: ['email', 'name', 'status'],
+
+  _showPersonnelExport(opts) {
+    const restricted = !!(opts && opts.restricted);
+    const allColumns = Pages._personnelExportColumns();
+    const columns = restricted
+      ? allColumns
+          .filter(c => Pages._PERSONNEL_EXPORT_LIMITED_KEYS.indexOf(c.key) >= 0)
+          .map(c => ({ ...c, checked: true, always: true }))
+      : allColumns;
     const allStatuses = Pages._personnelStatusList();
     const activeSet = new Set(Pages._activePersonnelStatuses());
     const groupedStatuses = allStatuses.filter(s => activeSet.has(s));
@@ -1241,7 +1253,7 @@ const Pages = {
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">員工狀態（不勾＝全部）</label>
+        <label class="form-label">員工狀態（不勾＝全部${restricted ? '在職' : ''}）</label>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .75rem;margin-bottom:.6rem">
           <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
             <input type="checkbox" id="exportStatusActiveGroup"> 在職（${esc(groupedStatuses.join('、'))}）
@@ -1252,11 +1264,11 @@ const Pages = {
             </label>`).join('')}
           </div>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
+        ${restricted ? '' : `<div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
           ${otherStatuses.map(s => `<label style="display:inline-flex;align-items:center;gap:.3rem">
             <input type="checkbox" class="export-status" value="${esc(s)}"> ${esc(s)}
           </label>`).join('')}
-        </div>
+        </div>`}
       </div>
       <div class="form-group">
         <label class="form-label">檔案格式</label>

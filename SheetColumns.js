@@ -11,6 +11,9 @@ const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'ASSET', 'EXTERNAL
 /** @const {string} 視為「在勤（active）」的人員狀態值。集中管理以避免用詞漂移。 */
 const ACTIVE_PERSONNEL_STATUS = '在勤';
 
+/** @const {string[]} 「在職」衍生集合，須與 js/router.html 的 _activePersonnelStatuses() 同步。 */
+const ACTIVE_PERSONNEL_STATUSES = ['在勤', '育嬰假', '休假', '外派人員', '留職停薪'];
+
 const PERSONNEL_STATUSES = new Set([
   '在勤',
   '育嬰假',

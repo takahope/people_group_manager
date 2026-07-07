@@ -402,6 +402,9 @@ const PERSONNEL_EXPORT_COLUMNS_ = [
   { key: 'leaveDate', label: '離職日期' },
 ];
 
+/** @const {string[]} 主管（受限匯出）固定欄位：信箱恆含、姓名、員工狀態。 */
+const PERSONNEL_EXPORT_LIMITED_KEYS_ = ['email', 'name', 'status'];
+
 /**
  * 匯出人員資料（回結構化資料，前端據此產 CSV 或 xlsx）。
  *
@@ -411,20 +414,32 @@ const PERSONNEL_EXPORT_COLUMNS_ = [
  * @returns {string} JSON 回應 { headers:[中文標題], keys:[欄位key], rows:[[...]] }
  */
 function exportPersonnel(options) {
-  if (!checkPermission('personnel.export')) return errorResponse('無匯出人員資料的權限');
+  const canFull = checkPermission('personnel.export');                          // ADMIN / HR
+  const restricted = !canFull && checkPermission('personnel.export.limited');    // MGR
+  if (!canFull && !restricted) return errorResponse('無匯出人員資料的權限');
 
   const opts = options || {};
   const validKeys = PERSONNEL_EXPORT_COLUMNS_.map(c => c.key);
 
-  // 決定欄位（信箱恆含且置首）
-  let selectedKeys = Array.isArray(opts.columns) && opts.columns.length
-    ? opts.columns.filter(k => validKeys.indexOf(k) >= 0)
-    : validKeys.slice();
-  if (selectedKeys.indexOf('email') < 0) selectedKeys.unshift('email');
-  // 依 PERSONNEL_EXPORT_COLUMNS_ 的固定順序排列
-  selectedKeys = validKeys.filter(k => selectedKeys.indexOf(k) >= 0);
-
-  const statusFilter = Array.isArray(opts.statuses) ? new Set(opts.statuses) : null;
+  let selectedKeys;
+  let statusFilter;
+  if (restricted) {
+    // 主管：欄位鎖信箱/姓名/狀態；狀態僅允許在職集合的子集，忽略其餘傳入值
+    selectedKeys = PERSONNEL_EXPORT_LIMITED_KEYS_.slice();
+    const requested = Array.isArray(opts.statuses)
+      ? opts.statuses.filter(s => ACTIVE_PERSONNEL_STATUSES.indexOf(s) >= 0)
+      : [];
+    statusFilter = new Set(requested.length ? requested : ACTIVE_PERSONNEL_STATUSES);
+  } else {
+    // 決定欄位（信箱恆含且置首）
+    selectedKeys = Array.isArray(opts.columns) && opts.columns.length
+      ? opts.columns.filter(k => validKeys.indexOf(k) >= 0)
+      : validKeys.slice();
+    if (selectedKeys.indexOf('email') < 0) selectedKeys.unshift('email');
+    // 依 PERSONNEL_EXPORT_COLUMNS_ 的固定順序排列
+    selectedKeys = validKeys.filter(k => selectedKeys.indexOf(k) >= 0);
+    statusFilter = Array.isArray(opts.statuses) && opts.statuses.length ? new Set(opts.statuses) : null;
+  }
 
   let list = DataService.getSheet1Data();
   if (statusFilter && statusFilter.size) {
