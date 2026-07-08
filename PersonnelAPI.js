@@ -228,7 +228,7 @@ function getAllPersonnel(options) {
       return successResponse(decoratePersonnelList(DataService.getSheet1Data()));
     }
 
-    // 主管：僅「在職」5 種子狀態 + 今年離職者（合作單位/委外廠商/倫理委員會一律排除），隱藏到職/離職日期。
+    // 主管：僅「在職」3 種子狀態 + 今年離職者（合作單位/委外廠商/倫理委員會一律排除），隱藏到職/離職日期與電話/手機。
     // 預設全公司範圍；view='dept' 時再限縮為直屬部屬（部門視角）。
     if (checkPermission('personnel.read.dept')) {
       const view = String((options && options.view) || '').trim();
@@ -239,7 +239,7 @@ function getAllPersonnel(options) {
           if (p.status === '離職') return isLeaveDateThisYear_(p.leaveDate);
           return ACTIVE_PERSONNEL_STATUSES.indexOf(p.status) >= 0;
         })
-        .map(p => ({ ...p, hireDate: '', leaveDate: '' }));
+        .map(p => ({ ...p, hireDate: '', leaveDate: '', phone: '', mobile: '' }));
       return successResponse(decoratePersonnelList(scoped));
     }
 
@@ -428,17 +428,18 @@ function getRecentLogs() {
 
 /** 匯出可選欄位定義（key → 中文標題），前端複選以此為準。 */
 const PERSONNEL_EXPORT_COLUMNS_ = [
-  { key: 'email',     label: '信箱' },
-  { key: 'name',      label: '姓名' },
-  { key: 'status',    label: '員工狀態' },
-  { key: 'phone',     label: '電話' },
-  { key: 'mobile',    label: '手機' },
-  { key: 'hireDate',  label: '到職日期' },
-  { key: 'leaveDate', label: '離職日期' },
+  { key: 'email',        label: '信箱' },
+  { key: 'name',         label: '姓名' },
+  { key: 'status',       label: '員工狀態' },
+  { key: 'workLocation', label: '工作地點' },
+  { key: 'phone',        label: '電話' },
+  { key: 'mobile',       label: '手機' },
+  { key: 'hireDate',     label: '到職日期' },
+  { key: 'leaveDate',    label: '離職日期' },
 ];
 
-/** @const {string[]} 主管（受限匯出）固定欄位：信箱恆含、姓名、員工狀態。 */
-const PERSONNEL_EXPORT_LIMITED_KEYS_ = ['email', 'name', 'status'];
+/** @const {string[]} 主管（受限匯出）固定欄位，須與 js/router.html 的 _PERSONNEL_EXPORT_LIMITED_KEYS 同步。 */
+const PERSONNEL_EXPORT_LIMITED_KEYS_ = ['email', 'name', 'status', 'workLocation'];
 
 /**
  * 匯出人員資料（回結構化資料，前端據此產 CSV 或 xlsx）。
@@ -460,7 +461,7 @@ function exportPersonnel(options) {
   let selectedKeys;
   let statusFilter;
   if (restricted) {
-    // 主管：欄位鎖信箱/姓名/狀態；狀態僅允許在職集合的子集，忽略其餘傳入值
+    // 主管：欄位鎖信箱/姓名/狀態/工作地點；狀態僅允許在職集合的子集，忽略其餘傳入值
     selectedKeys = PERSONNEL_EXPORT_LIMITED_KEYS_.slice();
     const requested = Array.isArray(opts.statuses)
       ? opts.statuses.filter(s => ACTIVE_PERSONNEL_STATUSES.indexOf(s) >= 0)
@@ -498,7 +499,7 @@ function exportPersonnel(options) {
 /**
  * 批次匯入人員（前端已完成衝突解析，records 為最終目標值）。
  *
- * @param {Array<{email,name,status,phone,mobile,hireDate,leaveDate,action}>} records
+ * @param {Array<{email,name,status,phone,mobile,hireDate,leaveDate,workLocation,action}>} records
  * @returns {string} JSON 回應 { added, updated, skipped, errors:[{email,reason}] }
  */
 function importPersonnelBatch(records) {
@@ -535,6 +536,7 @@ function importPersonnelBatch(records) {
       mobile: String(rec.mobile || '').trim(),
       hireDate: normalizeDateValue_(rec.hireDate),
       leaveDate: normalizeDateValue_(rec.leaveDate),
+      workLocation: String(rec.workLocation || '').trim(),
     };
 
     const validationError = validatePersonObj(normalized);
@@ -618,7 +620,11 @@ function validatePersonObj(personObj) {
     return '姓名為必填且不超過 50 字元';
   }
   if (!PERSONNEL_STATUSES.has(personObj.status)) {
-    return '員工狀態必須為在勤、育嬰假、休假、留職停薪、合作單位、委外廠商、外派人員、倫理委員會或離職';
+    return '員工狀態必須為在勤、育嬰假、休假、合作單位、委外廠商、倫理委員會或離職';
+  }
+  // 工作地點為選填；若有填寫，僅限三個代碼值
+  if (personObj.workLocation && !WORK_LOCATIONS.has(personObj.workLocation)) {
+    return '工作地點必須為 bioit、station 或 outside，或留空';
   }
   // 電話／手機為選填；若有填寫，長度上限 30 字
   if (personObj.phone && String(personObj.phone).length > 30) {

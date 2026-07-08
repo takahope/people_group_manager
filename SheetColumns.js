@@ -12,19 +12,20 @@ const ROLE_ENTITY_TYPES = new Set(['PERSON', 'GROUP', 'RULE', 'ASSET', 'EXTERNAL
 const ACTIVE_PERSONNEL_STATUS = '在勤';
 
 /** @const {string[]} 「在職」衍生集合，須與 js/router.html 的 _activePersonnelStatuses() 同步。 */
-const ACTIVE_PERSONNEL_STATUSES = ['在勤', '育嬰假', '休假', '外派人員', '留職停薪'];
+const ACTIVE_PERSONNEL_STATUSES = ['在勤', '育嬰假', '休假'];
 
 const PERSONNEL_STATUSES = new Set([
   '在勤',
   '育嬰假',
   '休假',
-  '留職停薪',
   '合作單位',
   '委外廠商',
-  '外派人員',
   '倫理委員會',
   '離職',
 ]);
+
+/** @const {Set<string>} 人員主檔「工作地點」允許值（H 欄，選填）。前端顯示 BIOIT／收案人員／外派人員。 */
+const WORK_LOCATIONS = new Set(['bioit', 'station', 'outside']);
 
 const COL = {
   PERSONNEL: {
@@ -35,6 +36,7 @@ const COL = {
     MOBILE: 4,      // 手機
     HIRE_DATE: 5,   // 到職日期（附加於尾欄，免遷移）
     LEAVE_DATE: 6,  // 離職日期（附加於尾欄，免遷移）
+    WORK_LOCATION: 7, // 工作地點 bioit/station/outside（附加於尾欄，免遷移，選填）
   },
   ORG: {
     TYPE: 0,

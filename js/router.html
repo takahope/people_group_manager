@@ -573,7 +573,7 @@ const Pages = {
               tone: 'neutral',
               meta: (stats.scope === 'dept' || stats.scope === 'company')
                 ? `在勤 ${stats.personnel?.total ?? 0} / 在職 ${stats.personnel?.actualPayrollTotal ?? 0}`
-                : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 外派 ${statusBreakdown['外派人員'] || 0}`,
+                : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 休假 ${statusBreakdown['休假'] || 0}`,
               compact: true,
             },
           ];
@@ -696,14 +696,15 @@ const Pages = {
       { key: '在勤', label: '在勤', type: 'status' },
       { key: '育嬰假', label: '育嬰假', type: 'status' },
       { key: '休假', label: '休假', type: 'status' },
-      { key: '留職停薪', label: '留職停薪', type: 'status' },
       { key: '離職', label: isMgrRole ? '離職（今年）' : '離職', type: 'status' },
       { key: '合作單位', label: '合作單位', type: 'status' },
       { key: '委外廠商', label: '委外廠商', type: 'status' },
-      { key: '外派人員', label: '外派人員', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
       { key: '全部', label: '全部', type: 'all' },
     ].filter(option => !isMgrRole || !mgrHiddenStatusKeys.has(option.key));
+    // 工作地點篩選（第二列）：STAFF 僅見本人一列，不顯示
+    const showLocationFilters = user?.role !== 'ROLE-APP-STAFF';
+    const locationOptions = [{ key: '全部', label: '全部' }].concat(Pages._workLocationOptions());
     const assignmentPrefetchState = Pages._personnelAssignmentPrefetchState = {
       navId: pageCtx.navId,
       byEmail: new Map(),
@@ -726,9 +727,10 @@ const Pages = {
             <span class="personnel-search__label">快速搜尋</span>
             <div class="personnel-search__field">
               <svg class="personnel-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input type="search" id="personnelSearch" class="personnel-search__input" placeholder="搜尋姓名、信箱、狀態…">
+              <input type="search" id="personnelSearch" class="personnel-search__input" placeholder="搜尋姓名、信箱、狀態、工作地點…">
             </div>
           </label>
+          <button class="btn btn--ghost personnel-toolbar__action" id="columnPickerBtn">⚙ 顯示欄位</button>
           ${canWrite ? '<button class="btn btn--ghost personnel-toolbar__action" id="importPersonBtn">⬇ 匯入</button>' : ''}
           ${canExport ? '<button class="btn btn--ghost personnel-toolbar__action" id="exportPersonBtn">⬆ 匯出</button>' : ''}
           ${canWrite ? '<button class="btn btn--primary personnel-toolbar__action" id="addPersonBtn">＋ 新增人員</button>' : ''}
@@ -744,6 +746,10 @@ const Pages = {
           <input type="checkbox" id="includeRepresentativeToggle"> 包含代表人
         </label>
       </div>
+      ${showLocationFilters ? `<div id="personnelLocationFilters" class="personnel-status-filters" style="margin-top:.5rem">
+        <span style="font-size:.85rem;color:#64748b;margin-right:.25rem">工作地點</span>
+        ${locationOptions.map(option => `<button class="btn btn--ghost btn--sm" data-location="${option.key}">${option.label}</button>`).join('')}
+      </div>` : ''}
       <div id="personnelTable">
         <div class="page-loading"><div class="spinner"></div><p>載入人員資料…</p></div>
       </div>
@@ -797,13 +803,15 @@ const Pages = {
         pageCtx,
         canWrite,
         canDelete,
-        hideDates: isMgrRole,
+        userRole: user?.role || '',
+        visibleColumns: Pages._loadPersonnelVisibleColumns(user?.role || ''),
         includeRepresentative: false,
         view: 'company',
         viewLoading: false,
         data: Array.isArray(data) ? data.slice() : [],
         filtered: [],
         activeStatus: '在職',
+        activeLocation: '全部',
         searchQuery: '',
         statusOptions,
         statusBadgeClass(status) {
@@ -811,10 +819,8 @@ const Pages = {
             '在勤': 'badge--success',
             '育嬰假': 'badge--warning',
             '休假': 'badge--neutral',
-            '留職停薪': 'badge--danger',
             '合作單位': 'badge--primary',
             '委外廠商': 'badge--neutral',
-            '外派人員': 'badge--success',
             '倫理委員會': 'badge--warning',
           }[status] || 'badge--neutral');
         },
@@ -844,40 +850,39 @@ const Pages = {
           }
           return pool.filter(item => String(item?.status || '').trim() === statusKey).length;
         },
+        matchesActiveLocation(person) {
+          if (this.activeLocation === '全部') return true;
+          // 精確比對原始值；工作地點空白者只在「全部」出現
+          return String(person?.workLocation || '').trim() === this.activeLocation;
+        },
+        getLocationCount(locationKey) {
+          const pool = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
+          if (locationKey === '全部') return pool.length;
+          return pool.filter(item => String(item?.workLocation || '').trim() === locationKey).length;
+        },
         applyFilters(searchQuery = this.searchQuery) {
           this.searchQuery = String(searchQuery || '');
           const q = this.searchQuery.toLowerCase();
           this.filtered = this.data.filter(p => {
             const matchesStatus = this.matchesActiveStatus(p);
+            const matchesLocation = this.matchesActiveLocation(p);
             const matchesSearch = !q ||
               String(p.name || '').toLowerCase().includes(q) ||
               String(p.email || '').toLowerCase().includes(q) ||
-              String(p.status || '').toLowerCase().includes(q);
-            return matchesStatus && matchesSearch;
+              String(p.status || '').toLowerCase().includes(q) ||
+              Pages._workLocationLabel(p.workLocation).toLowerCase().includes(q);
+            return matchesStatus && matchesLocation && matchesSearch;
           });
           return this.filtered;
         },
         renderTable() {
-          const dateColumns = this.hideDates ? [] : [
-            { key: 'hireDate',  label: '到職日期', render: (value) => Components.escapeHtml(value || '—') },
-            { key: 'leaveDate', label: '離職日期', render: (value) => Components.escapeHtml(value || '—') },
-            {
-              key: 'tenure',
-              label: '在職時間',
-              sortable: false,
-              render: (_, row) => Components.escapeHtml(Pages._formatTenure(row.hireDate, row.leaveDate)),
-            },
-          ];
+          const visible = new Set(this.visibleColumns);
+          const dataColumns = Pages._personnelColumnRegistry(this)
+            .filter(col => col.always || visible.has(col.key))
+            .map(({ always, ...columnDef }) => columnDef);
           Components.DataTable({
             columns: [
-              { key: 'email', label: '信箱' },
-              { key: 'name',  label: '姓名' },
-              {
-                key: 'status',
-                label: '員工狀態',
-                render: (value) => `<span class="badge ${this.statusBadgeClass(value)}">${Components.escapeHtml(value || '—')}</span>`,
-              },
-              ...dateColumns,
+              ...dataColumns,
               {
                 key: 'assignmentView',
                 label: '查看職務',
@@ -898,6 +903,7 @@ const Pages = {
           if (!this.pageCtx?.isActive()) return;
           this.applyFilters(this.searchQuery);
           this.updateFilterButtons();
+          this.updateLocationButtons();
           this.renderTable();
         },
         updateFilterButtons() {
@@ -909,6 +915,19 @@ const Pages = {
             const option = this.statusOptions.find(item => item.key === statusKey);
             const label = option ? option.label : statusKey;
             const count = this.getStatusCount(statusKey);
+            btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
+            btn.textContent = `${label}（${count}）`;
+          });
+        },
+        updateLocationButtons() {
+          const locationBar = this.pageCtx?.query('#personnelLocationFilters');
+          if (!locationBar) return;
+          locationBar.querySelectorAll('[data-location]').forEach(btn => {
+            const locationKey = btn.dataset.location;
+            const selected = locationKey === this.activeLocation;
+            const option = locationOptions.find(item => item.key === locationKey);
+            const label = option ? option.label : locationKey;
+            const count = this.getLocationCount(locationKey);
             btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
             btn.textContent = `${label}（${count}）`;
           });
@@ -941,6 +960,26 @@ const Pages = {
         Pages._personnelState.updateFilterButtons();
       }
 
+      const locationBar = pageCtx.query('#personnelLocationFilters');
+      if (locationBar) {
+        locationBar.querySelectorAll('[data-location]').forEach(btn => {
+          btn.onclick = () => {
+            const state = Pages._personnelState;
+            if (!state || state.navId !== pageCtx.navId) return;
+            state.activeLocation = btn.dataset.location;
+            state.applyFilters(searchInput.value);
+            state.updateLocationButtons();
+            state.renderTable();
+          };
+        });
+        Pages._personnelState.updateLocationButtons();
+      }
+
+      const columnPickerBtn = pageCtx.query('#columnPickerBtn');
+      if (columnPickerBtn) {
+        columnPickerBtn.onclick = () => Pages._showPersonnelColumnPicker();
+      }
+
       const includeRepToggle = pageCtx.query('#includeRepresentativeToggle');
       if (includeRepToggle) {
         includeRepToggle.onchange = () => {
@@ -949,6 +988,7 @@ const Pages = {
           state.includeRepresentative = includeRepToggle.checked;
           state.applyFilters(searchInput.value);
           state.updateFilterButtons();
+          state.updateLocationButtons();
           state.renderTable();
         };
       }
@@ -1030,8 +1070,17 @@ const Pages = {
       <div class="form-group">
         <label class="form-label required">員工狀態</label>
         <select class="form-control" id="pStatus">
-          ${['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會', '離職'].map(status => `
+          ${Pages._personnelStatusList().map(status => `
             <option value="${status}" ${person.status === status || (!person.status && status === '在勤') ? 'selected' : ''}>${status}</option>
+          `).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">工作地點</label>
+        <select class="form-control" id="pWorkLocation">
+          <option value="" ${!person.workLocation ? 'selected' : ''}>未指定</option>
+          ${Pages._workLocationOptions().map(loc => `
+            <option value="${loc.key}" ${person.workLocation === loc.key ? 'selected' : ''}>${loc.label}</option>
           `).join('')}
         </select>
       </div>
@@ -1208,6 +1257,7 @@ const Pages = {
       mobile: person.mobile,
       hireDate: person.hireDate,
       leaveDate: person.leaveDate,
+      workLocation: person.workLocation,
     };
     prefetchState.byEmail.set(normalizedEmail, cachedPayload);
   },
@@ -1223,6 +1273,7 @@ const Pages = {
       mobile: existingPerson?.mobile || '',
       hireDate: existingPerson?.hireDate || '',
       leaveDate: existingPerson?.leaveDate || '',
+      workLocation: existingPerson?.workLocation || '',
     };
 
     Components.showModal(isEdit ? '編輯人員' : '新增人員', Pages._renderPersonFormBody(formDraft, isEdit), async () => {
@@ -1234,6 +1285,7 @@ const Pages = {
         mobile: document.getElementById('pMobile').value.trim(),
         hireDate:  Pages._fromDateInputValue(document.getElementById('pHireDate').value),
         leaveDate: Pages._fromDateInputValue(document.getElementById('pLeaveDate').value),
+        workLocation: document.getElementById('pWorkLocation').value,
       };
       // 離職日期一旦有值，狀態強制為離職，與後端 personnelRowFromObj_ 的規則同步，
       // 避免存檔後樂觀更新（_upsertPersonnelState/_syncPersonnelAssignmentCache）顯示舊狀態
@@ -1273,33 +1325,160 @@ const Pages = {
 
   // 匯入比對用的可比對欄位（信箱為主鍵，另外比對這些欄位）
   _personnelImportFields: [
-    { key: 'name',      label: '姓名' },
-    { key: 'status',    label: '員工狀態' },
-    { key: 'phone',     label: '電話' },
-    { key: 'mobile',    label: '手機' },
-    { key: 'hireDate',  label: '到職日期' },
-    { key: 'leaveDate', label: '離職日期' },
+    { key: 'name',         label: '姓名' },
+    { key: 'status',       label: '員工狀態' },
+    { key: 'workLocation', label: '工作地點' },
+    { key: 'phone',        label: '電話' },
+    { key: 'mobile',       label: '手機' },
+    { key: 'hireDate',     label: '到職日期' },
+    { key: 'leaveDate',    label: '離職日期' },
   ],
 
   _personnelStatusList() {
-    return ['在勤', '育嬰假', '休假', '留職停薪', '合作單位', '委外廠商', '外派人員', '倫理委員會', '離職'];
+    return ['在勤', '育嬰假', '休假', '合作單位', '委外廠商', '倫理委員會', '離職'];
   },
 
   // 「在職」衍生定義：與人員清單頁篩選 tab（loadPersonnel 的 excludedPayrollStatuses）、
   // DashboardAPI.js 的 isActualPayrollPersonnel_ 維持同一套「在職」概念，避免各處定義不一致。
+  // 須與 SheetColumns.js 的 ACTIVE_PERSONNEL_STATUSES 同步。
   _activePersonnelStatuses() {
-    return ['在勤', '育嬰假', '休假', '外派人員', '留職停薪'];
+    return ['在勤', '育嬰假', '休假'];
+  },
+
+  // 工作地點（人員主檔 H 欄）：原始值 → 前端顯示名稱，須與 SheetColumns.js 的 WORK_LOCATIONS 同步。
+  _workLocationOptions() {
+    return [
+      { key: 'bioit',   label: 'BIOIT' },
+      { key: 'station', label: '收案人員' },
+      { key: 'outside', label: '外派人員' },
+    ];
+  },
+
+  _workLocationLabel(raw) {
+    const key = String(raw || '').trim();
+    const option = Pages._workLocationOptions().find(item => item.key === key);
+    return option ? option.label : '';
+  },
+
+  // 匯入正規化：接受原始值（不分大小寫）與顯示名稱；其餘原樣保留，交由比對階段報「工作地點不合法」。
+  _normalizeWorkLocation(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    const lower = s.toLowerCase();
+    const byKey = Pages._workLocationOptions().find(item => item.key === lower);
+    if (byKey) return byKey.key;
+    const byLabel = Pages._workLocationOptions().find(item => item.label.toLowerCase() === lower);
+    return byLabel ? byLabel.key : s;
+  },
+
+  // =============================================
+  // 人員表格欄位顯示選擇
+  // =============================================
+
+  // 欄位註冊表：人員表格所有可顯示欄位（含衍生欄「在職時間」），順序即表格欄序。
+  // state 供 status 欄取得 badge 樣式；只取 key/label（如欄位選擇器）時可傳 null。
+  _personnelColumnRegistry(state) {
+    return [
+      { key: 'email', label: '信箱', always: true },
+      { key: 'name',  label: '姓名' },
+      {
+        key: 'status',
+        label: '員工狀態',
+        render: (value) => `<span class="badge ${state ? state.statusBadgeClass(value) : 'badge--neutral'}">${Components.escapeHtml(value || '—')}</span>`,
+      },
+      { key: 'workLocation', label: '工作地點', render: (value) => Components.escapeHtml(Pages._workLocationLabel(value) || '—') },
+      { key: 'phone',  label: '電話', render: (value) => Components.escapeHtml(value || '—') },
+      { key: 'mobile', label: '手機', render: (value) => Components.escapeHtml(value || '—') },
+      { key: 'hireDate',  label: '到職日期', render: (value) => Components.escapeHtml(value || '—') },
+      { key: 'leaveDate', label: '離職日期', render: (value) => Components.escapeHtml(value || '—') },
+      {
+        key: 'tenure',
+        label: '在職時間',
+        sortable: false,
+        render: (_, row) => Components.escapeHtml(Pages._formatTenure(row.hireDate, row.leaveDate)),
+      },
+    ];
+  },
+
+  // 各角色可自選的欄位集合；MGR 僅四欄（後端亦不回傳其餘欄位值，雙層保險）。
+  _personnelAllowedColumnKeys(role) {
+    if (role === 'ROLE-APP-MGR') return ['email', 'name', 'status', 'workLocation'];
+    return Pages._personnelColumnRegistry(null).map(col => col.key);
+  },
+
+  _personnelDefaultColumnKeys(role) {
+    if (role === 'ROLE-APP-ADMIN' || role === 'ROLE-APP-HR' || role === 'ROLE-APP-AUDITOR') {
+      return ['email', 'name', 'status', 'workLocation', 'hireDate', 'leaveDate', 'tenure'];
+    }
+    return Pages._personnelAllowedColumnKeys(role).slice();
+  },
+
+  _personnelColumnStorageKey(role) {
+    return 'hrPersonnelVisibleColumns:' + (role || 'unknown');
+  },
+
+  // 讀取已儲存的欄位選擇：過濾至該角色允許集合、強制含信箱；無有效儲存值回預設。
+  // localStorage 在 GAS iframe 沙盒偶發不可用，讀寫皆包 try/catch。
+  _loadPersonnelVisibleColumns(role) {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(Pages._personnelColumnStorageKey(role)) || 'null');
+    } catch (err) {
+      saved = null;
+    }
+    if (!Array.isArray(saved) || !saved.length) return Pages._personnelDefaultColumnKeys(role);
+    const allowed = new Set(Pages._personnelAllowedColumnKeys(role));
+    const filtered = saved.filter(key => allowed.has(key));
+    if (filtered.indexOf('email') < 0) filtered.unshift('email');
+    return filtered;
+  },
+
+  _savePersonnelVisibleColumns(role, keys) {
+    try {
+      localStorage.setItem(Pages._personnelColumnStorageKey(role), JSON.stringify(keys));
+    } catch (err) {
+      // 無法持久化時仍以當前 session 的 state.visibleColumns 生效
+    }
+  },
+
+  _showPersonnelColumnPicker() {
+    const state = Pages._personnelState;
+    if (!state) return;
+    const role = state.userRole;
+    const allowed = new Set(Pages._personnelAllowedColumnKeys(role));
+    const selectable = Pages._personnelColumnRegistry(null).filter(col => allowed.has(col.key));
+    const selected = new Set(state.visibleColumns);
+    const esc = Components.escapeHtml;
+    const body = `
+      <div class="form-group">
+        <label class="form-label">要顯示的欄位</label>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem .9rem">
+          ${selectable.map(col => `<label style="display:inline-flex;align-items:center;gap:.3rem">
+            <input type="checkbox" class="column-pick" value="${col.key}" ${col.always || selected.has(col.key) ? 'checked' : ''} ${col.always ? 'disabled' : ''}> ${esc(col.label)}${col.always ? '（必含）' : ''}
+          </label>`).join('')}
+        </div>
+      </div>`;
+
+    Components.showModal('選擇顯示欄位', body, () => {
+      const keys = Array.from(document.querySelectorAll('.column-pick')).filter(x => x.checked).map(x => x.value);
+      if (keys.indexOf('email') < 0) keys.unshift('email');
+      state.visibleColumns = keys;
+      Pages._savePersonnelVisibleColumns(role, keys);
+      state.refreshView();
+      return true;
+    }, '套用');
   },
 
   _personnelExportColumns() {
     return [
-      { key: 'email',     label: '信箱',     checked: true, always: true },
-      { key: 'name',      label: '姓名',     checked: true },
-      { key: 'status',    label: '員工狀態', checked: true },
-      { key: 'hireDate',  label: '到職日期', checked: true },
-      { key: 'leaveDate', label: '離職日期', checked: true },
-      { key: 'phone',     label: '電話',     checked: false },
-      { key: 'mobile',    label: '手機',     checked: false },
+      { key: 'email',        label: '信箱',     checked: true, always: true },
+      { key: 'name',         label: '姓名',     checked: true },
+      { key: 'status',       label: '員工狀態', checked: true },
+      { key: 'workLocation', label: '工作地點', checked: true },
+      { key: 'hireDate',     label: '到職日期', checked: true },
+      { key: 'leaveDate',    label: '離職日期', checked: true },
+      { key: 'phone',        label: '電話',     checked: false },
+      { key: 'mobile',       label: '手機',     checked: false },
     ];
   },
 
@@ -1342,7 +1521,7 @@ const Pages = {
   },
 
   // 主管受限匯出固定欄位，須與 PersonnelAPI.js 的 PERSONNEL_EXPORT_LIMITED_KEYS_ 同步。
-  _PERSONNEL_EXPORT_LIMITED_KEYS: ['email', 'name', 'status'],
+  _PERSONNEL_EXPORT_LIMITED_KEYS: ['email', 'name', 'status', 'workLocation'],
 
   _showPersonnelExport(opts) {
     const restricted = !!(opts && opts.restricted);
@@ -1463,7 +1642,7 @@ const Pages = {
         <label class="form-label required">選擇檔案（CSV 或 Excel）</label>
         <input type="file" id="personnelImportFile" class="form-control" accept=".csv,.xlsx,.xls">
         <p style="font-size:.82rem;color:#64748b;margin-top:.5rem;line-height:1.5">
-          檔案第一列須為欄位標題，且必須包含「信箱」欄；離職人員歷史檔可無信箱欄，但每列須有「姓名」與「離職日期」。可包含欄位：信箱、姓名、員工狀態、電話、手機、到職日期、離職日期。<br>
+          檔案第一列須為欄位標題，且必須包含「信箱」欄；離職人員歷史檔可無信箱欄，但每列須有「姓名」與「離職日期」。可包含欄位：信箱、姓名、員工狀態、工作地點、電話、手機、到職日期、離職日期。<br>
           比對以信箱為單一事實來源（無信箱的離職人員改以姓名比對）；空白欄不會覆蓋既有資料。
         </p>
         <div id="personnelImportFileInfo" style="font-size:.85rem;color:#334155;margin-top:.5rem"></div>
@@ -1561,6 +1740,7 @@ const Pages = {
       '手機': 'mobile', '行動電話': 'mobile', 'mobile': 'mobile',
       '到職日期': 'hireDate', '到職日': 'hireDate', 'hiredate': 'hireDate',
       '離職日期': 'leaveDate', '離職日': 'leaveDate', 'leavedate': 'leaveDate',
+      '工作地點': 'workLocation', 'worklocation': 'workLocation',
     };
     return map[key] || '';
   },
@@ -1589,6 +1769,7 @@ const Pages = {
       mobile: cellAt(r, 'mobile'),
       hireDate: Pages._normalizeDateStr(cellAt(r, 'hireDate')),
       leaveDate: Pages._normalizeDateStr(cellAt(r, 'leaveDate')),
+      workLocation: Pages._normalizeWorkLocation(cellAt(r, 'workLocation')),
     })).filter(rec => rec.email || rec.name); // 無信箱但有姓名的列留給比對階段驗證（離職人員可無信箱）
   },
 
@@ -1636,6 +1817,7 @@ const Pages = {
     });
 
     const statusSet = new Set(Pages._personnelStatusList());
+    const locationSet = new Set(Pages._workLocationOptions().map(item => item.key));
     const fields = Pages._personnelImportFields;
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const result = { news: [], fills: [], conflicts: [], errors: [], unchanged: 0 };
@@ -1682,6 +1864,7 @@ const Pages = {
         const problems = [];
         if (!name) problems.push('缺少姓名');
         if (rec.status && !statusSet.has(rec.status)) problems.push('員工狀態不合法');
+        if (rec.workLocation && !locationSet.has(rec.workLocation)) problems.push('工作地點不合法');
         if (problems.length) { result.errors.push({ email: displayKey(), reason: problems.join('、') }); return; }
         result.news.push({
           email,
@@ -1689,6 +1872,7 @@ const Pages = {
           final: {
             email, name: name, status: rec.status || '在勤',
             phone: rec.phone, mobile: rec.mobile, hireDate: rec.hireDate, leaveDate: rec.leaveDate,
+            workLocation: rec.workLocation || '',
             action: 'add',
           },
         });
@@ -1699,19 +1883,23 @@ const Pages = {
         email: existing.email, name: existing.name || '', status: existing.status || '在勤',
         phone: existing.phone || '', mobile: existing.mobile || '',
         hireDate: existing.hireDate || '', leaveDate: existing.leaveDate || '',
+        workLocation: existing.workLocation || '',
       };
       const fillFields = [];
       const conflictFields = [];
       let statusInvalid = false;
+      let locationInvalid = false;
       fields.forEach(f => {
         const impVal = String(rec[f.key] || '').trim();
         const exVal = String(existing[f.key] || '').trim();
         if (!impVal) return;
         if (f.key === 'status' && !statusSet.has(impVal)) { statusInvalid = true; return; }
+        if (f.key === 'workLocation' && !locationSet.has(impVal)) { locationInvalid = true; return; }
         if (!exVal) fillFields.push({ key: f.key, label: f.label, oldVal: exVal, newVal: impVal });
         else if (exVal !== impVal) conflictFields.push({ key: f.key, label: f.label, oldVal: exVal, newVal: impVal });
       });
       if (statusInvalid) { result.errors.push({ email, reason: '員工狀態不合法' }); return; }
+      if (locationInvalid) { result.errors.push({ email, reason: '工作地點不合法（限 bioit／station／outside）' }); return; }
 
       if (!fillFields.length && !conflictFields.length) { result.unchanged++; return; }
 

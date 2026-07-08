@@ -270,10 +270,8 @@ function buildStatusBreakdown_(personnel) {
     在勤: 0,
     育嬰假: 0,
     休假: 0,
-    留職停薪: 0,
     合作單位: 0,
     委外廠商: 0,
-    外派人員: 0,
     倫理委員會: 0,
     離職: 0,
   };

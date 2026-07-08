@@ -63,6 +63,7 @@ function rowToPersonnel(row) {
     mobile: row[COL.PERSONNEL.MOBILE] || '',
     hireDate:  formatCellDate_(row[COL.PERSONNEL.HIRE_DATE]),
     leaveDate: formatCellDate_(row[COL.PERSONNEL.LEAVE_DATE]),
+    workLocation: String(row[COL.PERSONNEL.WORK_LOCATION] || '').trim(),
   };
 }
 
@@ -323,6 +324,7 @@ function personnelRowFromObj_(personObj) {
   row[COL.PERSONNEL.MOBILE]     = personObj.mobile || '';
   row[COL.PERSONNEL.HIRE_DATE]  = personObj.hireDate || '';
   row[COL.PERSONNEL.LEAVE_DATE] = leaveDate;
+  row[COL.PERSONNEL.WORK_LOCATION] = personObj.workLocation || '';
   return row;
 }
 
