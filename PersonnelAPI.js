@@ -550,6 +550,7 @@ function importPersonnelBatch(records) {
       hireDate: normalizeDateValue_(rec.hireDate),
       leaveDate: normalizeDateValue_(rec.leaveDate),
       workLocation: String(rec.workLocation || '').trim(),
+      forceInsert: rec && rec.forceInsert === true,
     };
 
     const validationError = validatePersonObj(normalized);
@@ -622,13 +623,9 @@ function normalizeDateValue_(v) {
  * @returns {string|null} 錯誤訊息或 null（驗證通過）
  */
 function validatePersonObj(personObj) {
-  // 信箱可空，但僅限已離職者（需有離職日期）；有信箱仍須通過格式驗證
+  // 信箱可空（僅憑姓名即可匯入）；有信箱仍須通過格式驗證
   const email = String(personObj.email || '').trim();
-  if (email) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '信箱格式不正確';
-  } else if (!personObj.leaveDate) {
-    return '無信箱人員僅限已離職者（需同時有姓名與離職日期）';
-  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return '信箱格式不正確';
   if (!personObj.name || personObj.name.length > 50) {
     return '姓名為必填且不超過 50 字元';
   }

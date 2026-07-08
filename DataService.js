@@ -412,8 +412,10 @@ function bulkImportPersonnel(records) {
   list.forEach(rec => {
     const key = String(rec.email || '').trim().toLowerCase();
     const rowArr = personnelRowFromObj_(rec);
+    // forceInsert：使用者在同名待決定時明確選「新增一筆全新人員」，一律追加、不就地更新既有同名列
+    const forceInsert = rec.forceInsert === true;
     if (key) {
-      if (indexByEmail.hasOwnProperty(key)) {
+      if (!forceInsert && indexByEmail.hasOwnProperty(key)) {
         data[indexByEmail[key]] = rowArr;
         updated++;
       } else {
@@ -421,10 +423,10 @@ function bulkImportPersonnel(records) {
       }
       return;
     }
-    // 無信箱 record：以姓名比對既有的空信箱列，命中就地更新、否則追加
+    // 無信箱 record：預設以姓名比對既有空信箱列就地更新；forceInsert 時直接追加為新列
     const nameKey = String(rec.name || '').trim().toLowerCase();
     if (!nameKey) return;
-    if (indexByEmptyEmailName.hasOwnProperty(nameKey)) {
+    if (!forceInsert && indexByEmptyEmailName.hasOwnProperty(nameKey)) {
       const rowIdx = indexByEmptyEmailName[nameKey];
       if (rowIdx >= 1) {
         data[rowIdx] = rowArr;
@@ -433,7 +435,7 @@ function bulkImportPersonnel(records) {
       return; // rowIdx === -1：本批已追加同名列，略過（上游 seen 已擋，此為防禦）
     }
     newRows.push(rowArr);
-    indexByEmptyEmailName[nameKey] = -1;
+    if (!forceInsert) indexByEmptyEmailName[nameKey] = -1;
   });
 
   // 一次寫回既有區塊（含未變動列，內容不變）

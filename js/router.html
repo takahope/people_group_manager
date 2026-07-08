@@ -1770,8 +1770,8 @@ const Pages = {
       const key = Pages._personnelHeaderAlias(h);
       if (key && colIndex[key] === undefined) colIndex[key] = idx;
     });
-    if (colIndex.email === undefined && colIndex.leaveDate === undefined) {
-      throw new Error('找不到「信箱」欄，請確認第一列標題（離職人員歷史檔可無信箱欄，但須有「離職日期」欄）');
+    if (colIndex.email === undefined && colIndex.name === undefined) {
+      throw new Error('找不到「信箱」或「姓名」欄，請確認第一列標題（至少需其中一欄）');
     }
     const cellAt = (row, field) => {
       const idx = colIndex[field];
@@ -1836,7 +1836,7 @@ const Pages = {
     const locationSet = new Set(Pages._workLocationOptions().map(item => item.key));
     const fields = Pages._personnelImportFields;
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const result = { news: [], fills: [], conflicts: [], errors: [], unchanged: 0 };
+    const result = { news: [], fills: [], conflicts: [], ambiguous: [], errors: [], unchanged: 0 };
     const seen = new Set();
 
     imported.forEach(rec => {
@@ -1853,19 +1853,41 @@ const Pages = {
         }
         existing = byEmail.get(email.toLowerCase()) || null;
       } else {
-        if (!name || !rec.leaveDate) {
-          result.errors.push({ email: displayKey() || '(空白信箱)', reason: '無信箱人員僅限已離職者（需同時有姓名與離職日期）' });
+        if (!name) {
+          result.errors.push({ email: '(空白信箱)', reason: '缺少姓名（無信箱時姓名為必填）' });
           return;
         }
         const matches = byName.get(name.toLowerCase()) || [];
-        if (matches.length > 1) {
-          result.errors.push({ email: displayKey(), reason: `現有名單中有 ${matches.length} 位同名人員，請人工處理` });
+        if (matches.length >= 1) {
+          // 同名待決定：不自動更新或新增，於預覽交由使用者逐筆決定（更新現有／新增全新／拒絕）
+          const nameKey = 'name:' + name.toLowerCase();
+          if (seen.has(nameKey)) { result.errors.push({ email: displayKey(), reason: '檔案內姓名重複（無信箱）' }); return; }
+          seen.add(nameKey);
+          result.ambiguous.push({
+            displayKey: displayKey(),
+            name,
+            imported: {
+              status: String(rec.status || '').trim(),
+              phone: String(rec.phone || '').trim(),
+              mobile: String(rec.mobile || '').trim(),
+              hireDate: rec.hireDate || '',
+              leaveDate: rec.leaveDate || '',
+              workLocation: rec.workLocation || '',
+            },
+            candidates: matches.map(m => ({
+              email: String(m.email || '').trim(),
+              name: String(m.name || '').trim(),
+              status: String(m.status || '').trim(),
+              phone: String(m.phone || '').trim(),
+              mobile: String(m.mobile || '').trim(),
+              hireDate: m.hireDate || '',
+              leaveDate: m.leaveDate || '',
+              workLocation: m.workLocation || '',
+            })),
+          });
           return;
         }
-        if (matches.length === 1) {
-          existing = matches[0];
-          email = String(existing.email || '').trim(); // 沿用既有信箱（可能仍為空 → 後端以姓名定位更新）
-        }
+        // 無同名 → 全新無信箱人員，落到下方新增分支
       }
 
       // 統一去重鍵：解析後的信箱，或（仍無信箱時）姓名
