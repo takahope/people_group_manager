@@ -1943,9 +1943,26 @@ const Pages = {
     </div>`);
 
     if (c.n) {
-      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">新增人員（${c.n}）</h3>`);
-      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7">' +
-        diff.news.map(n => `<li>${esc(n.displayKey || n.final.email)}　${esc(n.final.name)}　<span class="badge badge--neutral">${esc(n.final.status)}</span></li>`).join('') + '</ul>');
+      const statusOpts = (selected) => Pages._personnelStatusList()
+        .map(s => `<option value="${esc(s)}" ${selected === s ? 'selected' : ''}>${esc(s)}</option>`).join('');
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">新增人員（${c.n}）　<span style="font-weight:400;font-size:.78rem;color:#64748b">可逐一調整人員狀態</span></h3>`);
+      parts.push(`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.15rem 0 .6rem;padding:.5rem .6rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+        <span style="font-size:.82rem;color:#334155;font-weight:600">批次設定全部：</span>
+        <select id="importBulkStatus" class="form-control" style="display:inline-block;width:auto;height:auto;padding:.15rem .4rem;font-size:.82rem">${statusOpts('在勤')}</select>
+        <label id="importBulkHireWrap" style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;color:#334155">到職日期<input type="date" id="importBulkHireDate" class="form-control" style="width:auto;height:auto;padding:.1rem .3rem;font-size:.8rem"></label>
+        <label id="importBulkLeaveWrap" style="display:none;align-items:center;gap:.3rem;font-size:.8rem;color:#334155">離職日期<input type="date" id="importBulkLeaveDate" class="form-control" style="width:auto;height:auto;padding:.1rem .3rem;font-size:.8rem"></label>
+        <button type="button" class="btn btn--ghost btn--sm" id="importBulkApply">套用到全部</button>
+        <span style="font-size:.75rem;color:#94a3b8">日期為選填</span>
+      </div>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:2">' +
+        diff.news.map((n, i) => {
+          const locked = !!n.final.leaveDate; // 有離職日期 → 狀態強制為離職，與存檔規則同步，不開放調整
+          return `<li>${esc(n.displayKey || n.final.email)}　${esc(n.final.name)}　` +
+            `<select data-news-status="${i}" class="form-control" ${locked ? 'disabled' : ''} ` +
+            `style="display:inline-block;width:auto;height:auto;padding:.1rem .4rem;font-size:.8rem">${statusOpts(n.final.status)}</select>` +
+            (locked ? '<span style="font-size:.75rem;color:#64748b;margin-left:.35rem">已有離職日期，狀態固定為離職</span>' : '') +
+            '</li>';
+        }).join('') + '</ul>');
     }
     if (c.u) {
       parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">自動填補空欄（${c.u}）</h3>`);
@@ -1993,6 +2010,41 @@ const Pages = {
     const rejectBtn = document.getElementById('importConflictRejectAll');
     if (overBtn) overBtn.onclick = () => setAll('overwrite');
     if (rejectBtn) rejectBtn.onclick = () => setAll('reject');
+
+    // 批次設定全部新增人員狀態（含選填的到職／離職日期）
+    const bulkStatus = document.getElementById('importBulkStatus');
+    const bulkHireWrap = document.getElementById('importBulkHireWrap');
+    const bulkLeaveWrap = document.getElementById('importBulkLeaveWrap');
+    const bulkApply = document.getElementById('importBulkApply');
+    const syncBulkDateVisibility = () => {
+      if (!bulkStatus) return;
+      const v = bulkStatus.value;
+      if (bulkHireWrap) bulkHireWrap.style.display = v === '在勤' ? 'inline-flex' : 'none';
+      if (bulkLeaveWrap) bulkLeaveWrap.style.display = v === '離職' ? 'inline-flex' : 'none';
+    };
+    if (bulkStatus) bulkStatus.onchange = syncBulkDateVisibility;
+    syncBulkDateVisibility();
+    if (bulkApply) {
+      bulkApply.onclick = () => {
+        const status = bulkStatus ? bulkStatus.value : '在勤';
+        const hireEl = document.getElementById('importBulkHireDate');
+        const leaveEl = document.getElementById('importBulkLeaveDate');
+        const hireVal = status === '在勤' && hireEl && hireEl.value ? Pages._normalizeDateStr(hireEl.value) : '';
+        const leaveVal = status === '離職' && leaveEl && leaveEl.value ? Pages._normalizeDateStr(leaveEl.value) : '';
+        diff.news.forEach(n => {
+          n.final.status = status;
+          if (status === '在勤') {
+            n.final.leaveDate = ''; // 在勤與離職日期互斥，清掉殘留避免重繪時又被鎖回離職
+            if (hireVal) n.final.hireDate = hireVal;
+          } else if (status === '離職') {
+            if (leaveVal) n.final.leaveDate = leaveVal;
+          }
+        });
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) bodyEl.innerHTML = Pages._renderImportPreview(diff);
+        Pages._bindImportPreviewControls(diff);
+      };
+    }
   },
 
   _showPersonnelImportPreview(diff) {
@@ -2003,7 +2055,14 @@ const Pages = {
     const hasWork = (diff.news.length + diff.fills.length + diff.conflicts.length) > 0;
     Components.showModal('匯入預覽', Pages._renderImportPreview(diff), async () => {
       const records = [];
-      diff.news.forEach(n => records.push(n.final));
+      diff.news.forEach((n, i) => {
+        // 讀取預覽中使用者為此新增人員選擇的狀態；有離職日期者狀態已強制為離職（見下方同步規則），不受下拉影響
+        if (!n.final.leaveDate) {
+          const sel = document.querySelector(`select[data-news-status="${i}"]`);
+          if (sel && sel.value) n.final.status = sel.value;
+        }
+        records.push(n.final);
+      });
       diff.fills.forEach(f => records.push(f.final));
       diff.conflicts.forEach((cf, i) => {
         const sel = document.querySelector(`input[name="conflict_${i}"]:checked`);
