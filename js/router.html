@@ -1349,6 +1349,7 @@ const Pages = {
   _workLocationOptions() {
     return [
       { key: 'bioit',   label: 'BIOIT' },
+      { key: 'biobank', label: '中心辦公室' },
       { key: 'station', label: '收案人員' },
       { key: 'outside', label: '外派人員' },
     ];
@@ -1899,7 +1900,7 @@ const Pages = {
         else if (exVal !== impVal) conflictFields.push({ key: f.key, label: f.label, oldVal: exVal, newVal: impVal });
       });
       if (statusInvalid) { result.errors.push({ email, reason: '員工狀態不合法' }); return; }
-      if (locationInvalid) { result.errors.push({ email, reason: '工作地點不合法（限 bioit／station／outside）' }); return; }
+      if (locationInvalid) { result.errors.push({ email, reason: '工作地點不合法（限 bioit／station／outside／biobank）' }); return; }
 
       if (!fillFields.length && !conflictFields.length) { result.unchanged++; return; }
 

@@ -32,7 +32,7 @@ const SHEET_SCHEMA = [
       '行動電話（選填）',
       '到職日期（選填，格式 yyyy/MM/dd）',
       '離職日期（選填，格式 yyyy/MM/dd）',
-      '工作地點（選填，限定值：bioit／station／outside）',
+      '工作地點（選填，限定值：bioit／station／outside／biobank）',
     ],
     headerColor: '#1a73e8',
   },

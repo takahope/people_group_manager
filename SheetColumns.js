@@ -24,8 +24,8 @@ const PERSONNEL_STATUSES = new Set([
   '離職',
 ]);
 
-/** @const {Set<string>} 人員主檔「工作地點」允許值（H 欄，選填）。前端顯示 BIOIT／收案人員／外派人員。 */
-const WORK_LOCATIONS = new Set(['bioit', 'station', 'outside']);
+/** @const {Set<string>} 人員主檔「工作地點」允許值（H 欄，選填）。前端顯示 BIOIT／收案人員／外派人員／中心辦公室。 */
+const WORK_LOCATIONS = new Set(['bioit', 'station', 'outside', 'biobank']);
 
 const COL = {
   PERSONNEL: {
@@ -36,7 +36,7 @@ const COL = {
     MOBILE: 4,      // 手機
     HIRE_DATE: 5,   // 到職日期（附加於尾欄，免遷移）
     LEAVE_DATE: 6,  // 離職日期（附加於尾欄，免遷移）
-    WORK_LOCATION: 7, // 工作地點 bioit/station/outside（附加於尾欄，免遷移，選填）
+    WORK_LOCATION: 7, // 工作地點 bioit/station/outside/biobank（附加於尾欄，免遷移，選填）
   },
   ORG: {
     TYPE: 0,

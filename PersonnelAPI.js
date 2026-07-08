@@ -624,7 +624,7 @@ function validatePersonObj(personObj) {
   }
   // 工作地點為選填；若有填寫，僅限三個代碼值
   if (personObj.workLocation && !WORK_LOCATIONS.has(personObj.workLocation)) {
-    return '工作地點必須為 bioit、station 或 outside，或留空';
+    return '工作地點必須為 bioit、station、outside 或 biobank，或留空';
   }
   // 電話／手機為選填；若有填寫，長度上限 30 字
   if (personObj.phone && String(personObj.phone).length > 30) {
