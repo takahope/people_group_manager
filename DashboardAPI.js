@@ -14,18 +14,24 @@
 /**
  * 取得儀表板所需的完整統計資料
  * 依角色回傳不同範圍的統計（避免多次往返 API）
- * 
+ *
+ * @param {{view?:string}} options
+ *   view：主管（dashboard.dept）可傳 'company' 切換為全公司視角；其餘角色忽略此參數。
  * @returns {string} JSON 回應
  */
-function getDashboardStats() {
+function getDashboardStats(options) {
   try {
     const email = Session.getActiveUser().getEmail();
+    const view = String((options && options.view) || '').trim();
 
     // 依角色決定統計範圍
     if (checkPermission('dashboard.full')) {
       return successResponse(buildFullStats());
     }
     if (checkPermission('dashboard.dept')) {
+      if (view === 'company') {
+        return successResponse(buildMgrCompanyStats_());
+      }
       return successResponse(buildDeptStats(email));
     }
     if (checkPermission('dashboard.personal')) {
@@ -115,8 +121,36 @@ function buildFullStats() {
 }
 
 /**
+ * 依指定人員範圍組出主管視角共用的統計回應。
+ *
+ * @param {string} scope 'dept' | 'company'
+ * @param {Array<Object>} personnelList 範圍內的人員主檔列
+ * @param {Array<Object>} scopedAssignments 範圍內的職務配置列
+ * @param {Set<string>} representativeEmails
+ * @returns {Object}
+ */
+function buildScopedStats_(scope, personnelList, scopedAssignments, representativeEmails) {
+  const activeList = personnelList.filter(p => p.status === '在勤');
+  const payrollList = personnelList.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
+
+  return {
+    scope,
+    warnings: [],
+    personnel: {
+      total: activeList.length,
+      totalAll: personnelList.length,
+      activeTotal: activeList.length,
+      actualPayrollTotal: payrollList.length,
+      statusBreakdown: buildStatusBreakdown_(personnelList),
+    },
+    concurrentPersonnel: buildConcurrentList(scopedAssignments),
+    recentLogs: DataService.getRecentAuditLogs(5),
+  };
+}
+
+/**
  * 部門統計（主管可見轄下成員）
- * 
+ *
  * @param {string} managerEmail
  * @returns {Object}
  */
@@ -129,25 +163,38 @@ function buildDeptStats(managerEmail) {
 
   const deptPersonnel = DataService.getSheet1Data()
     .filter(p => deptEmails.has(p.email));
-  const activeDeptPersonnel = deptPersonnel.filter(p => p.status === '在勤');
-  const payrollDeptPersonnel = deptPersonnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
 
-  return {
-    scope: 'dept',
-    warnings: [],
-    personnel: {
-      total: activeDeptPersonnel.length,
-      totalAll: deptPersonnel.length,
-      activeTotal: activeDeptPersonnel.length,
-      actualPayrollTotal: payrollDeptPersonnel.length,
-      statusBreakdown: buildStatusBreakdown_(deptPersonnel),
-      details: deptPersonnel,
-    },
-    concurrentPersonnel: buildConcurrentList(
-      all.filter(a => deptEmails.has(a.email))
-    ),
-    recentLogs: DataService.getRecentAuditLogs(5),
-  };
+  return buildScopedStats_(
+    'dept',
+    deptPersonnel,
+    all.filter(a => deptEmails.has(a.email)),
+    representativeEmails
+  );
+}
+
+/**
+ * 全公司統計（主管切換視角用），資料範圍與人員管理頁的主管視角一致：
+ * 在職子狀態（ACTIVE_PERSONNEL_STATUSES）＋今年離職者。
+ *
+ * @returns {Object}
+ */
+function buildMgrCompanyStats_() {
+  const all = DataService.getAllAssignments();
+  const representativeEmails = buildRepresentativeEmailSet_(all);
+  const companyPersonnel = DataService.getSheet1Data().filter(p => {
+    if (p.status === '離職') return isLeaveDateThisYear_(p.leaveDate);
+    return ACTIVE_PERSONNEL_STATUSES.indexOf(p.status) >= 0;
+  });
+  const emailSet = new Set(
+    companyPersonnel.map(p => String(p.email || '').trim().toLowerCase()).filter(Boolean)
+  );
+
+  return buildScopedStats_(
+    'company',
+    companyPersonnel,
+    all.filter(a => emailSet.has(String(a.email || '').trim().toLowerCase())),
+    representativeEmails
+  );
 }
 
 /**
