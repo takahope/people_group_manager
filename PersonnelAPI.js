@@ -192,6 +192,20 @@ function isLeaveDateThisYear_(leaveDate) {
 }
 
 /**
+ * 判斷人員是否落在「主管（MGR）可見範圍」：在職子狀態（在勤/育嬰假/休假）＋今年離職者。
+ * 為 getAllPersonnel、canAccessPersonnelTarget_、getAccessiblePersonnelList_ 三處共用，
+ * 避免各自維護一份過濾條件而漂移。不含直屬部屬限縮（由呼叫端另行套用）。
+ *
+ * @param {Object|null} person
+ * @returns {boolean}
+ */
+function isMgrVisiblePerson_(person) {
+  if (!person) return false;
+  if (person.status === '離職') return isLeaveDateThisYear_(person.leaveDate);
+  return ACTIVE_PERSONNEL_STATUSES.indexOf(person.status) >= 0;
+}
+
+/**
  * 取得目前使用者直屬部屬的 email 集合（小寫），依 Sheet3 職務配置的直屬主管欄位比對。
  *
  * @param {string} currentEmail
@@ -236,8 +250,7 @@ function getAllPersonnel(options) {
       const scoped = DataService.getSheet1Data()
         .filter(p => {
           if (directReports && !directReports.has(String(p.email || '').trim().toLowerCase())) return false;
-          if (p.status === '離職') return isLeaveDateThisYear_(p.leaveDate);
-          return ACTIVE_PERSONNEL_STATUSES.indexOf(p.status) >= 0;
+          return isMgrVisiblePerson_(p);
         })
         .map(p => ({ ...p, hireDate: '', leaveDate: '', phone: '', mobile: '' }));
       return successResponse(decoratePersonnelList(scoped));
@@ -670,10 +683,11 @@ function canAccessPersonnelTarget_(targetEmail) {
   }
 
   if (checkPermission('personnel.read.dept')) {
-    return DataService.getAllAssignments().some(item =>
-      String(item.managerEmail || '').trim().toLowerCase() === currentEmail
-      && String(item.email || '').trim().toLowerCase() === normalizedTargetEmail
-    );
+    // MGR 人員清單為全公司範圍（在職子狀態 + 今年離職），故職務查看亦放行同一範圍，
+    // 不再限縮為直屬部屬——與 getAllPersonnel / getAccessiblePersonnelList_ 的 MGR 範圍一致。
+    const person = DataService.getSheet1Data()
+      .find(p => String(p.email || '').trim().toLowerCase() === normalizedTargetEmail);
+    return isMgrVisiblePerson_(person);
   }
 
   return false;
@@ -687,10 +701,9 @@ function getAccessiblePersonnelList_() {
   }
 
   if (checkPermission('personnel.read.dept')) {
-    const directReports = buildDirectReportEmailSet_(currentEmail);
-    return DataService.getSheet1Data().filter(person =>
-      directReports.has(String(person.email || '').trim().toLowerCase())
-    );
+    // 與 canAccessPersonnelTarget_ 的 MGR 範圍一致：全公司在職子狀態 + 今年離職，
+    // 使職務詳情預載快取涵蓋 MGR 清單中所有可點擊的人員。
+    return DataService.getSheet1Data().filter(isMgrVisiblePerson_);
   }
 
   if (checkPermission('personnel.read.self')) {
