@@ -405,6 +405,9 @@ const Pages = {
             <button class="btn btn--primary btn--sm" data-view="dept">部門視角</button>
             <button class="btn btn--ghost btn--sm" data-view="company">組織視角</button>
           </div>` : ''}
+          <label id="dashboardRepToggleWrap" style="display:none;align-items:center;gap:.35rem;margin-top:.5rem;font-size:.82rem;color:var(--color-text-sub);cursor:pointer">
+            <input type="checkbox" id="dashboardIncludeRepToggle"> 包含代表人
+          </label>
         </div>
       </section>
       <div id="dashboardWarnings"></div>
@@ -424,16 +427,37 @@ const Pages = {
       if (logsEl) logsEl.innerHTML = logsSkeleton;
     };
 
-    let requestSeq = 0;
-    const loadStats = async (view) => {
-      const seq = ++requestSeq;
-      renderLoadingState();
-      const stats = await API.getDashboardStats(isMgr && view === 'company' ? { view: 'company' } : null);
-      if (!pageCtx.isActive() || seq !== requestSeq) return;
-      const warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
-      const logs = stats.recentLogs || [];
+    // 「包含代表人」切換狀態（預設不含，比照人員管理頁）；lastStats 供切換時免重新請求後端即可重繪
+    let includeRep = false;
+    let lastStats = null;
+
+    const updateRepToggleVisibility = (stats) => {
+      const wrap = pageCtx.query('#dashboardRepToggleWrap');
+      if (!wrap) return;
+      // 個人視角只看自己，代表人切換無意義，故僅在其他視角顯示
+      wrap.style.display = stats && stats.scope !== 'personal' ? 'inline-flex' : 'none';
+    };
+
+    const renderKpiGrid = (stats) => {
+      const statGrid = pageCtx.query('#statGrid');
+      if (!statGrid) return;
+      const scopeLabelMap = {
+        full: '全域總覽',
+        dept: '部門視角',
+        company: '組織視角',
+        personal: '個人視角',
+      };
       const total = stats.personnel?.total ?? (stats.person?.email ? 1 : 0);
       const payrollTotal = stats.personnel?.actualPayrollTotal ?? stats.actualPayroll ?? 0;
+      // 在勤／在職依「包含代表人」切換取用對應口徑；個人視角維持既有判定
+      const activeCount = stats.scope === 'personal'
+        ? total
+        : (includeRep ? (stats.personnel?.activeIncludeRep ?? total)
+                      : (stats.personnel?.activeExcludeRep ?? total));
+      const payrollCount = stats.scope === 'personal'
+        ? payrollTotal
+        : (includeRep ? (stats.personnel?.payrollIncludeRep ?? payrollTotal)
+                      : (stats.personnel?.payrollExcludeRep ?? payrollTotal));
       const concurrentCount = Array.isArray(stats.concurrentPersonnel)
         ? stats.concurrentPersonnel.length
         : (stats.concurrentCount || 0);
@@ -442,29 +466,6 @@ const Pages = {
         ? ((stats.auditAlerts.accountabilityIssues > 0 ? stats.auditAlerts.accountabilityIssues : 0)
           + (stats.auditAlerts.roleCodeIssues > 0 ? stats.auditAlerts.roleCodeIssues : 0))
         : '—';
-      const scopeLabelEl = pageCtx.query('#dashboardScopeLabel');
-      const scopeLabelMap = {
-        full: '全域總覽',
-        dept: '部門視角',
-        company: '組織視角',
-        personal: '個人視角',
-      };
-      if (scopeLabelEl) scopeLabelEl.textContent = scopeLabelMap[stats.scope] || '總覽';
-      const statGrid = pageCtx.query('#statGrid');
-      if (!statGrid) return;
-      const warningDiv = pageCtx.query('#dashboardWarnings');
-      if (warningDiv) {
-        warningDiv.innerHTML = warnings.length > 0 ? `
-          <section class="dashboard-alert">
-            <div class="dashboard-alert__header">
-              <h3>資料警示</h3>
-              <span class="badge badge--warning">${warnings.length} 項</span>
-            </div>
-            <div class="dashboard-alert__body">
-              ${warnings.map(w => `<div class="dashboard-alert__item">${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
-            </div>
-          </section>` : '';
-      }
       const statusBreakdown = stats.personnel?.statusBreakdown || {};
       const coreCards = stats.scope === 'personal'
         ? [
@@ -499,15 +500,15 @@ const Pages = {
         : [
             {
               label: '在勤總人數',
-              value: String(total),
+              value: String(activeCount),
               tone: 'success',
-              meta: `全人員 ${stats.personnel?.totalAll ?? total} 位`,
+              meta: includeRep ? `全人員 ${stats.personnel?.totalAll ?? total} 位（含代表人）` : `全人員 ${stats.personnel?.totalAll ?? total} 位（不含代表人）`,
             },
             {
               label: '在職',
-              value: String(payrollTotal),
+              value: String(payrollCount),
               tone: 'primary',
-              meta: '排除倫理委員會、合作單位、委外廠商',
+              meta: includeRep ? '排除倫理委員會、合作單位、委外廠商（含代表人）' : '排除倫理委員會、合作單位、委外廠商、代表人',
             },
             {
               label: '兼任人員',
@@ -572,7 +573,7 @@ const Pages = {
               value: Components.escapeHtml(scopeLabelMap[stats.scope] || stats.scope || '—'),
               tone: 'neutral',
               meta: (stats.scope === 'dept' || stats.scope === 'company')
-                ? `在勤 ${stats.personnel?.total ?? 0} / 在職 ${stats.personnel?.actualPayrollTotal ?? 0}`
+                ? `在勤 ${activeCount} / 在職 ${payrollCount}`
                 : `育嬰假 ${statusBreakdown['育嬰假'] || 0} / 休假 ${statusBreakdown['休假'] || 0}`,
               compact: true,
             },
@@ -587,7 +588,9 @@ const Pages = {
         ${coreCards.map(card => renderKpiCard(card, 'core')).join('')}
         ${secondaryCards.map(card => renderKpiCard(card, 'secondary')).join('')}
       `;
+    };
 
+    const renderLogs = (logs) => {
       const logsDiv = pageCtx.query('#dashboardLogs');
       if (!logsDiv) return;
       if (logs.length === 0) {
@@ -616,6 +619,51 @@ const Pages = {
           </table>
         </div>`;
     };
+
+    let requestSeq = 0;
+    const loadStats = async (view) => {
+      const seq = ++requestSeq;
+      renderLoadingState();
+      const stats = await API.getDashboardStats(isMgr && view === 'company' ? { view: 'company' } : null);
+      if (!pageCtx.isActive() || seq !== requestSeq) return;
+      const warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
+      const logs = stats.recentLogs || [];
+      const scopeLabelEl = pageCtx.query('#dashboardScopeLabel');
+      const scopeLabelMap = {
+        full: '全域總覽',
+        dept: '部門視角',
+        company: '組織視角',
+        personal: '個人視角',
+      };
+      if (scopeLabelEl) scopeLabelEl.textContent = scopeLabelMap[stats.scope] || '總覽';
+      const warningDiv = pageCtx.query('#dashboardWarnings');
+      if (warningDiv) {
+        warningDiv.innerHTML = warnings.length > 0 ? `
+          <section class="dashboard-alert">
+            <div class="dashboard-alert__header">
+              <h3>資料警示</h3>
+              <span class="badge badge--warning">${warnings.length} 項</span>
+            </div>
+            <div class="dashboard-alert__body">
+              ${warnings.map(w => `<div class="dashboard-alert__item">${Components.escapeHtml(w.message || '組織資料異常，已改以安全模式顯示')}</div>`).join('')}
+            </div>
+          </section>` : '';
+      }
+      lastStats = stats;
+      updateRepToggleVisibility(stats);
+      renderKpiGrid(stats);
+      renderLogs(logs);
+    };
+
+    const repToggleEl = pageCtx.query('#dashboardIncludeRepToggle');
+    if (repToggleEl) {
+      repToggleEl.onchange = () => {
+        if (!pageCtx.isActive()) return;
+        includeRep = repToggleEl.checked;
+        // 已有 lastStats 時只需就地重繪，免再請求後端
+        if (lastStats) renderKpiGrid(lastStats);
+      };
+    }
 
     let currentView = 'dept';
     const toggleEl = pageCtx.query('#dashboardViewToggle');
@@ -930,8 +978,9 @@ const Pages = {
             const option = this.statusOptions.find(item => item.key === statusKey);
             const label = option ? option.label : statusKey;
             btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
-            // 離職為額外的補充檢視資訊，不列入任何 tab 計數，故僅顯示標籤、不顯示數量
-            btn.textContent = statusKey === '離職' ? label : `${label}（${this.getStatusCount(statusKey)}）`;
+            // 離職與非在職白名單狀態（合作單位/委外廠商/倫理委員會）為額外補充檢視，不列入計數，故僅顯示標籤、不顯示數量
+            const noCountStatusKeys = new Set(['離職', '合作單位', '委外廠商', '倫理委員會']);
+            btn.textContent = noCountStatusKeys.has(statusKey) ? label : `${label}（${this.getStatusCount(statusKey)}）`;
           });
         },
         updateLocationButtons() {

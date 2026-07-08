@@ -132,6 +132,7 @@ function buildFullStats() {
 function buildScopedStats_(scope, personnelList, scopedAssignments, representativeEmails) {
   const activeList = personnelList.filter(p => p.status === '在勤');
   const payrollList = personnelList.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
+  const repCounts = buildRepresentativeAwareCounts_(personnelList, representativeEmails);
 
   return {
     scope,
@@ -141,6 +142,10 @@ function buildScopedStats_(scope, personnelList, scopedAssignments, representati
       totalAll: personnelList.length,
       activeTotal: activeList.length,
       actualPayrollTotal: payrollList.length,
+      activeIncludeRep: repCounts.activeIncludeRep,
+      activeExcludeRep: repCounts.activeExcludeRep,
+      payrollIncludeRep: repCounts.payrollIncludeRep,
+      payrollExcludeRep: repCounts.payrollExcludeRep,
       statusBreakdown: buildStatusBreakdown_(personnelList),
     },
     concurrentPersonnel: buildConcurrentList(scopedAssignments),
@@ -236,6 +241,7 @@ function buildPersonalStats(email) {
 function buildPersonnelStats(personnel, assignments, representativeEmails) {
   const activePersonnel = personnel.filter(p => p.status === '在勤');
   const actualPayrollPersonnel = personnel.filter(p => isActualPayrollPersonnel_(p, representativeEmails));
+  const repCounts = buildRepresentativeAwareCounts_(personnel, representativeEmails);
 
   // 以職務配置判斷人員所屬類型
   const orgCodes = new Set(DataService.getSheet2Data('ORG').map(o => o.code));
@@ -258,10 +264,38 @@ function buildPersonnelStats(personnel, assignments, representativeEmails) {
     totalAll: personnel.length,
     activeTotal: activePersonnel.length,
     actualPayrollTotal: actualPayrollPersonnel.length,
+    activeIncludeRep: repCounts.activeIncludeRep,
+    activeExcludeRep: repCounts.activeExcludeRep,
+    payrollIncludeRep: repCounts.payrollIncludeRep,
+    payrollExcludeRep: repCounts.payrollExcludeRep,
     statusBreakdown: buildStatusBreakdown_(personnel),
     orgCount: inOrg.size,
     tfCount:  inTF.size,
     extCount: inExternal.size,
+  };
+}
+
+/**
+ * 計算「在勤／在職」兩個口徑各自「含代表人」與「不含代表人」的人數，
+ * 供儀表板前端切換顯示（比照人員管理頁的代表人切換）。
+ *
+ * @param {Array<Object>} personnel 範圍內人員主檔列
+ * @param {Set<string>} representativeEmails 代表人信箱集合（小寫）
+ * @returns {{activeIncludeRep:number, activeExcludeRep:number, payrollIncludeRep:number, payrollExcludeRep:number}}
+ */
+function buildRepresentativeAwareCounts_(personnel, representativeEmails) {
+  const isRep = (p) => {
+    const email = String(p?.email || '').trim().toLowerCase();
+    return !!(representativeEmails && email && representativeEmails.has(email));
+  };
+  const activeAll = (personnel || []).filter(p => p.status === '在勤');
+  // 僅以狀態排除（保留代表人），代表人是否計入交由前端切換
+  const payrollAll = (personnel || []).filter(p => isActualPayrollPersonnel_(p, null));
+  return {
+    activeIncludeRep: activeAll.length,
+    activeExcludeRep: activeAll.filter(p => !isRep(p)).length,
+    payrollIncludeRep: payrollAll.length,
+    payrollExcludeRep: payrollAll.filter(p => !isRep(p)).length,
   };
 }
 

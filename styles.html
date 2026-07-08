@@ -602,6 +602,7 @@ ul, ol { list-style: none; }
 
 .personnel-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: flex-end;
   gap: .85rem;
@@ -612,8 +613,9 @@ ul, ol { list-style: none; }
   display: flex;
   flex-direction: column;
   gap: .45rem;
-  flex: 1 1 320px;
-  min-width: 0;
+  /* 按鈕變多後改為獨占整列，避免與按鈕擠在同一行導致搜尋框過窄 */
+  flex: 1 1 100%;
+  min-width: 240px;
 }
 
 .personnel-search__label {
