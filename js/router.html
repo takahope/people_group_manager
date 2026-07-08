@@ -700,7 +700,6 @@ const Pages = {
       { key: '合作單位', label: '合作單位', type: 'status' },
       { key: '委外廠商', label: '委外廠商', type: 'status' },
       { key: '倫理委員會', label: '倫理委員會', type: 'status' },
-      { key: '全部', label: '全部', type: 'all' },
     ].filter(option => !isMgrRole || !mgrHiddenStatusKeys.has(option.key));
     // 工作地點篩選（第二列）：STAFF 僅見本人一列，不顯示
     const showLocationFilters = user?.role !== 'ROLE-APP-STAFF';
@@ -851,13 +850,13 @@ const Pages = {
           return pool.filter(item => String(item?.status || '').trim() === statusKey).length;
         },
         matchesActiveLocation(person) {
-          if (this.activeLocation === '全部') return true;
-          // 精確比對原始值；工作地點空白者只在「全部」出現
+          // 「全部」＝工作地點有值者的加總（BIOIT／中心辦公室／收案人員／外派人員），排除工作地點空白者
+          if (this.activeLocation === '全部') return String(person?.workLocation || '').trim() !== '';
           return String(person?.workLocation || '').trim() === this.activeLocation;
         },
         getLocationCount(locationKey) {
           const pool = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
-          if (locationKey === '全部') return pool.length;
+          if (locationKey === '全部') return pool.filter(item => String(item?.workLocation || '').trim() !== '').length;
           return pool.filter(item => String(item?.workLocation || '').trim() === locationKey).length;
         },
         applyFilters(searchQuery = this.searchQuery) {
