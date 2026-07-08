@@ -850,21 +850,30 @@ const Pages = {
           return pool.filter(item => String(item?.status || '').trim() === statusKey).length;
         },
         matchesActiveLocation(person) {
-          // 「全部」＝工作地點有值者的加總（BIOIT／中心辦公室／收案人員／外派人員），排除工作地點空白者
-          if (this.activeLocation === '全部') return String(person?.workLocation || '').trim() !== '';
+          // 「全部」＝工作地點有值且非離職者的加總（BIOIT／中心辦公室／收案人員／外派人員），排除工作地點空白者與離職者
+          if (this.activeLocation === '全部') {
+            return String(person?.workLocation || '').trim() !== '' && String(person?.status || '').trim() !== '離職';
+          }
           return String(person?.workLocation || '').trim() === this.activeLocation;
         },
         getLocationCount(locationKey) {
-          const pool = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
-          if (locationKey === '全部') return pool.filter(item => String(item?.workLocation || '').trim() !== '').length;
+          // 離職者不列入任何工作地點 tab 計數（與狀態 tab 一致）；「全部」＝有工作地點值的非離職者加總
+          const pool = (this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative))
+            .filter(item => String(item?.status || '').trim() !== '離職');
+          if (locationKey === '全部') {
+            return pool.filter(item => String(item?.workLocation || '').trim() !== '').length;
+          }
           return pool.filter(item => String(item?.workLocation || '').trim() === locationKey).length;
         },
         applyFilters(searchQuery = this.searchQuery) {
           this.searchQuery = String(searchQuery || '');
           const q = this.searchQuery.toLowerCase();
+          // 離職 tab 為獨立的補充檢視：離職者本就不列入工作地點統計，故此檢視略過工作地點篩選，
+          // 否則「狀態=離職 AND 工作地點=全部（已排除離職）」會互斥而顯示不出任何資料。
+          const viewingResigned = this.activeStatus === '離職';
           this.filtered = this.data.filter(p => {
             const matchesStatus = this.matchesActiveStatus(p);
-            const matchesLocation = this.matchesActiveLocation(p);
+            const matchesLocation = viewingResigned || this.matchesActiveLocation(p);
             const matchesSearch = !q ||
               String(p.name || '').toLowerCase().includes(q) ||
               String(p.email || '').toLowerCase().includes(q) ||
@@ -913,9 +922,9 @@ const Pages = {
             const selected = statusKey === this.activeStatus;
             const option = this.statusOptions.find(item => item.key === statusKey);
             const label = option ? option.label : statusKey;
-            const count = this.getStatusCount(statusKey);
             btn.className = `btn btn--sm ${selected ? 'btn--primary' : 'btn--ghost'}`;
-            btn.textContent = `${label}（${count}）`;
+            // 離職為額外的補充檢視資訊，不列入任何 tab 計數，故僅顯示標籤、不顯示數量
+            btn.textContent = statusKey === '離職' ? label : `${label}（${this.getStatusCount(statusKey)}）`;
           });
         },
         updateLocationButtons() {
