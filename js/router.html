@@ -688,7 +688,9 @@ const Pages = {
     const canDelete = user?.role === 'ROLE-APP-ADMIN';
     const canExport = canWrite || user?.role === 'ROLE-APP-MGR';
     const isMgrRole = user?.role === 'ROLE-APP-MGR';
-    const excludedPayrollStatuses = new Set(['倫理委員會', '合作單位', '委外廠商', '離職']);
+    // 「在職」白名單（在勤/育嬰假/休假）：「在職」tab 與工作地點「全部」的計數／篩選一律以白名單認定，
+    // 避免離職/合作單位/委外廠商/倫理委員會，或舊值、空白等殘留狀態被黑名單排除法漏算而虛增數字。
+    const activePayrollStatuses = new Set(Pages._activePersonnelStatuses());
     // MGR 只能看到「在職」與「離職（今年）」，合作單位/委外廠商/倫理委員會這三個 tab 對 MGR 一律隱藏
     const mgrHiddenStatusKeys = new Set(['合作單位', '委外廠商', '倫理委員會']);
     const statusOptions = [
@@ -837,7 +839,7 @@ const Pages = {
           if (!this.includeRepresentative && person?.isRepresentative) return false;
           if (this.activeStatus === '全部') return true;
           if (this.activeStatus === '在職') {
-            return !excludedPayrollStatuses.has(String(person?.status || '').trim());
+            return activePayrollStatuses.has(String(person?.status || '').trim());
           }
           return String(person?.status || '').trim() === this.activeStatus;
         },
@@ -845,35 +847,40 @@ const Pages = {
           const pool = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
           if (statusKey === '全部') return pool.length;
           if (statusKey === '在職') {
-            return pool.filter(item => !excludedPayrollStatuses.has(String(item?.status || '').trim())).length;
+            return pool.filter(item => activePayrollStatuses.has(String(item?.status || '').trim())).length;
           }
           return pool.filter(item => String(item?.status || '').trim() === statusKey).length;
         },
         matchesActiveLocation(person) {
-          // 「全部」＝工作地點有值且非離職者的加總（BIOIT／中心辦公室／收案人員／外派人員），排除工作地點空白者與離職者
+          // 「全部」＝在職集合（在勤/育嬰假/休假）且工作地點有值者的加總；排除工作地點空白者，以及離職/合作單位/委外廠商/倫理委員會等非在職狀態
           if (this.activeLocation === '全部') {
-            return String(person?.workLocation || '').trim() !== '' && String(person?.status || '').trim() !== '離職';
+            return activePayrollStatuses.has(String(person?.status || '').trim()) && String(person?.workLocation || '').trim() !== '';
           }
           return String(person?.workLocation || '').trim() === this.activeLocation;
         },
         getLocationCount(locationKey) {
-          // 離職者不列入任何工作地點 tab 計數（與狀態 tab 一致）；「全部」＝有工作地點值的非離職者加總
-          const pool = (this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative))
-            .filter(item => String(item?.status || '').trim() !== '離職');
+          const base = this.includeRepresentative ? this.data : this.data.filter(item => !item?.isRepresentative);
+          // 「全部」＝在職集合（在勤/育嬰假/休假）且有工作地點值者，排除離職/合作單位/委外廠商/倫理委員會
           if (locationKey === '全部') {
-            return pool.filter(item => String(item?.workLocation || '').trim() !== '').length;
+            return base.filter(item => activePayrollStatuses.has(String(item?.status || '').trim())
+              && String(item?.workLocation || '').trim() !== '').length;
           }
-          return pool.filter(item => String(item?.workLocation || '').trim() === locationKey).length;
+          // 具體工作地點 tab：沿用原邏輯（僅排除離職者），點選時仍可看到該地點完整列表
+          return base.filter(item => String(item?.status || '').trim() !== '離職'
+            && String(item?.workLocation || '').trim() === locationKey).length;
         },
         applyFilters(searchQuery = this.searchQuery) {
           this.searchQuery = String(searchQuery || '');
           const q = this.searchQuery.toLowerCase();
-          // 離職 tab 為獨立的補充檢視：離職者本就不列入工作地點統計，故此檢視略過工作地點篩選，
-          // 否則「狀態=離職 AND 工作地點=全部（已排除離職）」會互斥而顯示不出任何資料。
-          const viewingResigned = this.activeStatus === '離職';
+          // 非在職集合狀態（離職/合作單位/委外廠商/倫理委員會等）為獨立補充檢視：工作地點「全部」已排除這些狀態，
+          // 兩者 AND 會互斥而顯示不出資料。故當檢視此類狀態且工作地點為「全部」時略過工作地點篩選，讓該 tab 仍能看到完整列表；
+          // 若使用者另選了具體工作地點，則仍照常篩選。
+          const viewingNonActiveStatus = this.activeStatus !== '在職'
+            && !activePayrollStatuses.has(this.activeStatus)
+            && this.activeLocation === '全部';
           this.filtered = this.data.filter(p => {
             const matchesStatus = this.matchesActiveStatus(p);
-            const matchesLocation = viewingResigned || this.matchesActiveLocation(p);
+            const matchesLocation = viewingNonActiveStatus || this.matchesActiveLocation(p);
             const matchesSearch = !q ||
               String(p.name || '').toLowerCase().includes(q) ||
               String(p.email || '').toLowerCase().includes(q) ||
@@ -1346,7 +1353,7 @@ const Pages = {
     return ['在勤', '育嬰假', '休假', '合作單位', '委外廠商', '倫理委員會', '離職'];
   },
 
-  // 「在職」衍生定義：與人員清單頁篩選 tab（loadPersonnel 的 excludedPayrollStatuses）、
+  // 「在職」衍生定義（白名單）：與人員清單頁篩選 tab（loadPersonnel 的 activePayrollStatuses）、
   // DashboardAPI.js 的 isActualPayrollPersonnel_ 維持同一套「在職」概念，避免各處定義不一致。
   // 須與 SheetColumns.js 的 ACTIVE_PERSONNEL_STATUSES 同步。
   _activePersonnelStatuses() {
