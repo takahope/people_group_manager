@@ -1701,24 +1701,51 @@ const Pages = {
 
   // ---------- 匯入 ----------
   _showPersonnelImport() {
-    let parsedRecords = null;
+    let parsedAoa = null;
     const body = `
       <div class="form-group">
         <label class="form-label required">選擇檔案（CSV 或 Excel）</label>
         <input type="file" id="personnelImportFile" class="form-control" accept=".csv,.xlsx,.xls">
-        <p style="font-size:.82rem;color:#64748b;margin-top:.5rem;line-height:1.5">
-          檔案第一列須為欄位標題，且必須包含「信箱」欄；離職人員歷史檔可無信箱欄，但每列須有「姓名」與「離職日期」。可包含欄位：信箱、姓名、員工狀態、工作地點、電話、手機、到職日期、離職日期。<br>
-          比對以信箱為單一事實來源（無信箱的離職人員改以姓名比對）；空白欄不會覆蓋既有資料。
+        <label style="display:flex;align-items:flex-start;gap:.5rem;margin-top:.75rem;font-size:.88rem;color:#334155;cursor:pointer">
+          <input type="checkbox" id="personnelImportCompareActive" style="margin-top:.2rem">
+          <span><strong>比對在職人員</strong>（年度篩選模式）<br>
+            <span style="font-size:.8rem;color:#64748b;line-height:1.5">勾選後改以固定欄位讀取：<strong>B 欄</strong>＝是否育嬰（標記 1）、<strong>C 欄</strong>＝姓名、<strong>D 欄</strong>＝信箱；A 欄與第一列標題自動忽略。將與目前在職名單比對，處理新增、育嬰假同步與疑似離職。</span>
+          </span>
+        </label>
+        <p id="personnelImportNormalHint" style="font-size:.82rem;color:#64748b;margin-top:.5rem;line-height:1.5">
+          未勾選時為一般匯入：檔案第一列須為欄位標題並含「信箱」欄（離職人員歷史檔可無信箱欄，但每列須有「姓名」與「離職日期」）。可包含欄位：信箱、姓名、員工狀態、工作地點、電話、手機、到職日期、離職日期；空白欄不會覆蓋既有資料。
         </p>
         <div id="personnelImportFileInfo" style="font-size:.85rem;color:#334155;margin-top:.5rem"></div>
       </div>`;
 
     Components.showModal('匯入人員 — 選擇檔案', body, async () => {
-      if (!parsedRecords || !parsedRecords.length) {
-        Components.showToast('請先選擇有效的檔案（每筆需含信箱，或姓名＋離職日期）', 'warning');
+      if (!parsedAoa || !parsedAoa.length) {
+        Components.showToast('請先選擇有效的檔案', 'warning');
         return false;
       }
-      const diff = await Pages._comparePersonnelImport(parsedRecords);
+      const compareActive = !!((document.getElementById('personnelImportCompareActive') || {}).checked);
+      if (compareActive) {
+        const records = Pages._rowsToComparisonRecords(parsedAoa);
+        if (!records.length) {
+          Components.showToast('比對模式讀不到有效資料（需 C 欄姓名或 D 欄信箱）', 'warning');
+          return false;
+        }
+        const diff = await Pages._compareActivePersonnelImport(records);
+        Pages._showActiveComparePreview(diff);
+        return false; // 預覽 modal 已接手畫面
+      }
+      let records;
+      try {
+        records = Pages._rowsToImportRecords(parsedAoa);
+      } catch (err) {
+        Components.showToast(err && err.message ? err.message : '檔案格式不符', 'error');
+        return false;
+      }
+      if (!records.length) {
+        Components.showToast('檔案沒有可匯入的資料列', 'warning');
+        return false;
+      }
+      const diff = await Pages._comparePersonnelImport(records);
       Pages._showPersonnelImportPreview(diff);
       return false; // 預覽 modal 已接手畫面，勿讓 hideModal 關掉它
     }, '下一步：比對', { closeBeforeConfirm: false, modalClassName: 'modal--wide' });
@@ -1728,11 +1755,12 @@ const Pages = {
       fileInput.addEventListener('change', async (e) => {
         const file = e.target.files && e.target.files[0];
         const info = document.getElementById('personnelImportFileInfo');
-        parsedRecords = null;
+        parsedAoa = null;
         if (!file) { if (info) info.textContent = ''; return; }
         try {
-          parsedRecords = await Pages._parseImportFile(file);
-          if (info) info.innerHTML = `已讀取 <strong>${parsedRecords.length}</strong> 筆資料（${Components.escapeHtml(file.name)}）`;
+          parsedAoa = await Pages._readImportAoa(file);
+          const rowCount = (parsedAoa || []).filter(r => Array.isArray(r) && r.some(c => String(c == null ? '' : c).trim() !== '')).length;
+          if (info) info.innerHTML = `已讀取 <strong>${Math.max(0, rowCount)}</strong> 列（含標題，${Components.escapeHtml(file.name)}）`;
         } catch (err) {
           if (info) info.textContent = '檔案解析失敗：' + (err && err.message ? err.message : err);
           Components.showToast('檔案解析失敗', 'error');
@@ -1741,7 +1769,8 @@ const Pages = {
     }
   },
 
-  _parseImportFile(file) {
+  // 讀取上傳檔案為 AOA（二維陣列）；標題模式與比對模式各自解讀
+  _readImportAoa(file) {
     return new Promise((resolve, reject) => {
       const name = String(file.name || '').toLowerCase();
       const reader = new FileReader();
@@ -1753,14 +1782,14 @@ const Pages = {
             const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
             const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-            resolve(Pages._rowsToImportRecords(aoa));
+            resolve(aoa);
           } catch (err) { reject(err); }
         };
         reader.readAsArrayBuffer(file);
       } else {
         reader.onload = (e) => {
           try {
-            resolve(Pages._rowsToImportRecords(Pages._parseCsv(String(e.target.result || ''))));
+            resolve(Pages._parseCsv(String(e.target.result || '')));
           } catch (err) { reject(err); }
         };
         reader.readAsText(file);
@@ -2192,6 +2221,310 @@ const Pages = {
     } catch (err) {
       console.error('匯入後重新載入人員失敗：', err);
     }
+  },
+
+  // ---------- 比對在職人員（月度名冊）模式 ----------
+  // 固定欄位解析：略過第一列標題，B(1)=育嬰標記、C(2)=姓名、D(3)=信箱，忽略 A 欄
+  _rowsToComparisonRecords(aoa) {
+    const rows = (aoa || []).filter(r => Array.isArray(r) && r.some(c => String(c == null ? '' : c).trim() !== ''));
+    if (rows.length < 2) return [];
+    const cell = (row, idx) => String(row[idx] == null ? '' : row[idx]).trim();
+    return rows.slice(1).map(r => ({
+      parental: cell(r, 1) === '1',
+      name: cell(r, 2),
+      email: cell(r, 3),
+    })).filter(rec => rec.name || rec.email);
+  },
+
+  async _compareActivePersonnelImport(records) {
+    const progress = Pages._createProgressController({
+      durationMs: 10000, hint: '比對在職名單', messages: Pages._compareProgressMessages(),
+    });
+    progress.start();
+    let existingList = [];
+    try {
+      existingList = await API.getAllPersonnel();
+    } catch (err) {
+      progress.stop();
+      API.handleError(err);
+      throw err;
+    }
+    await progress.complete();
+    existingList = Array.isArray(existingList) ? existingList : [];
+
+    const byEmail = new Map();
+    const byName = new Map();
+    existingList.forEach(p => {
+      const emailKey = String(p.email || '').trim().toLowerCase();
+      if (emailKey) byEmail.set(emailKey, p);
+      const nameKey = String(p.name || '').trim().toLowerCase();
+      if (!nameKey) return;
+      if (!byName.has(nameKey)) byName.set(nameKey, []);
+      byName.get(nameKey).push(p);
+    });
+
+    const activeSet = new Set(Pages._activePersonnelStatuses());
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const result = { news: [], parentalUpdates: [], departures: [], unchanged: 0, errors: [] };
+    const seen = new Set();
+    const presentKeys = new Set(); // 名冊中出現且對應到既有人員的身分鍵
+
+    const personKey = (p) => {
+      const e = String(p.email || '').trim().toLowerCase();
+      return e ? 'email:' + e : 'name:' + String(p.name || '').trim().toLowerCase();
+    };
+    // 更新既有人員時務必帶齊全部欄位：bulkImportPersonnel 是整列覆寫，缺欄會被清空
+    const existingFinal = (p) => ({
+      email: String(p.email || '').trim(),
+      name: String(p.name || '').trim(),
+      status: String(p.status || '').trim() || '在勤',
+      phone: String(p.phone || '').trim(),
+      mobile: String(p.mobile || '').trim(),
+      hireDate: p.hireDate || '',
+      leaveDate: p.leaveDate || '',
+      workLocation: p.workLocation || '',
+    });
+
+    records.forEach(rec => {
+      const email = String(rec.email || '').trim();
+      const name = String(rec.name || '').trim();
+      const displayKey = email || `（無信箱）${name}`;
+
+      const dedupKey = email ? 'email:' + email.toLowerCase() : 'name:' + name.toLowerCase();
+      if (seen.has(dedupKey)) {
+        result.errors.push({ display: displayKey, reason: email ? '名冊內信箱重複' : '名冊內姓名重複' });
+        return;
+      }
+      seen.add(dedupKey);
+
+      // 對應既有人員：信箱優先，否則姓名（須唯一）
+      let existing = null;
+      if (email) {
+        if (!emailRe.test(email)) { result.errors.push({ display: displayKey, reason: '信箱格式不正確' }); return; }
+        existing = byEmail.get(email.toLowerCase()) || null;
+      }
+      if (!existing && name) {
+        const matches = byName.get(name.toLowerCase()) || [];
+        if (matches.length === 1) existing = matches[0];
+        else if (matches.length > 1) { result.errors.push({ display: displayKey, reason: `現有名單有 ${matches.length} 位同名，請人工處理` }); return; }
+      }
+
+      if (!existing) {
+        // 名冊有、系統沒有 → 新增（在職人數增加）
+        if (!name) { result.errors.push({ display: displayKey, reason: '缺少姓名' }); return; }
+        result.news.push({
+          displayKey,
+          parental: rec.parental,
+          final: {
+            email, name,
+            status: rec.parental ? '育嬰假' : '在勤',
+            phone: '', mobile: '', hireDate: '', leaveDate: '',
+            workLocation: '',
+            action: 'add',
+          },
+        });
+        return;
+      }
+
+      presentKeys.add(personKey(existing));
+
+      // 育嬰假同步僅針對目前在職者（離職等非在職狀態不動）
+      const curStatus = String(existing.status || '').trim();
+      if (!activeSet.has(curStatus)) { result.unchanged++; return; }
+
+      if (rec.parental && curStatus !== '育嬰假') {
+        result.parentalUpdates.push({
+          displayKey, name: existing.name || '', fromStatus: curStatus, toStatus: '育嬰假',
+          final: Object.assign(existingFinal(existing), { status: '育嬰假', action: 'update' }),
+        });
+      } else if (!rec.parental && curStatus === '育嬰假') {
+        result.parentalUpdates.push({
+          displayKey, name: existing.name || '', fromStatus: '育嬰假', toStatus: '在勤',
+          final: Object.assign(existingFinal(existing), { status: '在勤', action: 'update' }),
+        });
+      } else {
+        result.unchanged++;
+      }
+    });
+
+    // 疑似離職：目前在職、但名冊未出現者
+    existingList.forEach(p => {
+      const curStatus = String(p.status || '').trim();
+      if (!activeSet.has(curStatus)) return;
+      if (presentKeys.has(personKey(p))) return;
+      result.departures.push({
+        displayKey: String(p.email || '').trim() || `（無信箱）${String(p.name || '').trim()}`,
+        name: String(p.name || '').trim(),
+        status: curStatus,
+        final: Object.assign(existingFinal(p), { action: 'update' }),
+      });
+    });
+
+    return result;
+  },
+
+  _renderActiveComparePreview(diff) {
+    const esc = Components.escapeHtml;
+    const statusOpts = (selected) => Pages._personnelStatusList()
+      .map(s => `<option value="${esc(s)}" ${selected === s ? 'selected' : ''}>${esc(s)}</option>`).join('');
+    const locOpts = (selected) => `<option value="" ${selected ? '' : 'selected'}>—</option>` +
+      Pages._workLocationOptions()
+        .map(o => `<option value="${esc(o.key)}" ${selected === o.key ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    const c = { n: diff.news.length, p: diff.parentalUpdates.length, d: diff.departures.length, u: diff.unchanged, e: diff.errors.length };
+    const parts = [];
+    parts.push(`<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+      <span class="badge badge--success">新增 ${c.n}</span>
+      <span class="badge badge--primary">育嬰同步 ${c.p}</span>
+      <span class="badge badge--warning">疑似離職 ${c.d}</span>
+      <span class="badge badge--neutral">無變更 ${c.u}</span>
+      <span class="badge badge--danger">錯誤 ${c.e}</span>
+    </div>`);
+
+    if (c.n) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">新增人員（${c.n}）　<span style="font-weight:400;font-size:.78rem;color:#64748b">在職人數增加，可選工作地點與狀態；育嬰者狀態固定</span></h3>`);
+      parts.push(`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.15rem 0 .6rem;padding:.5rem .6rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+        <span style="font-size:.82rem;color:#334155;font-weight:600">批次設定（非育嬰者）：</span>
+        <select id="cmpBulkStatus" class="form-control" style="display:inline-block;width:auto;height:auto;padding:.15rem .4rem;font-size:.82rem">${statusOpts('在勤')}</select>
+        <select id="cmpBulkLocation" class="form-control" style="display:inline-block;width:auto;height:auto;padding:.15rem .4rem;font-size:.82rem">${locOpts('')}</select>
+        <label id="cmpBulkHireWrap" style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;color:#334155">到職日期<input type="date" id="cmpBulkHireDate" class="form-control" style="width:auto;height:auto;padding:.1rem .3rem;font-size:.8rem"></label>
+        <button type="button" class="btn btn--ghost btn--sm" id="cmpBulkApply">套用到全部</button>
+        <span style="font-size:.75rem;color:#94a3b8">日期為選填</span>
+      </div>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:0;list-style:none;font-size:.85rem;line-height:2.1">' +
+        diff.news.map((n, i) => {
+          const locked = n.parental || !!n.final.leaveDate;
+          const note = n.parental
+            ? '<span style="font-size:.75rem;color:#7c3aed;margin-left:.35rem">育嬰，狀態固定育嬰假</span>'
+            : (n.final.leaveDate ? '<span style="font-size:.75rem;color:#64748b;margin-left:.35rem">已有離職日期，狀態固定離職</span>' : '');
+          return `<li style="border-bottom:1px solid #f1f5f9;padding:.15rem 0">${esc(n.displayKey)}　${esc(n.final.name)}　` +
+            `狀態<select data-cmp-news-status="${i}" class="form-control" ${locked ? 'disabled' : ''} style="display:inline-block;width:auto;height:auto;padding:.1rem .4rem;font-size:.8rem;margin:0 .35rem">${statusOpts(n.final.status)}</select>` +
+            `地點<select data-cmp-news-loc="${i}" class="form-control" style="display:inline-block;width:auto;height:auto;padding:.1rem .4rem;font-size:.8rem;margin-left:.35rem">${locOpts(n.final.workLocation)}</select>` +
+            note + '</li>';
+        }).join('') + '</ul>');
+    }
+
+    if (c.p) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem">育嬰假同步（${c.p}）　<span style="font-weight:400;font-size:.78rem;color:#64748b">預設全部套用，可取消個別</span></h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:0;list-style:none;font-size:.85rem;line-height:1.9">' +
+        diff.parentalUpdates.map((u, i) =>
+          `<li><label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer">` +
+          `<input type="checkbox" data-cmp-parental="${i}" checked>` +
+          `${esc(u.displayKey)}　${esc(u.name)}　<span style="color:#b91c1c">${esc(u.fromStatus)}</span> → <span style="color:#047857">${esc(u.toStatus)}</span></label></li>`).join('') + '</ul>');
+    }
+
+    if (c.d) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem;color:#b45309">疑似離職（${c.d}）　<span style="font-weight:400;font-size:.78rem;color:#64748b">目前在職但不在名冊中，勾選才會標記離職</span></h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:0;list-style:none;font-size:.85rem;line-height:2.1">' +
+        diff.departures.map((d, i) =>
+          `<li><label style="display:inline-flex;align-items:center;gap:.4rem;cursor:pointer">` +
+          `<input type="checkbox" data-cmp-depart="${i}">` +
+          `${esc(d.displayKey)}　${esc(d.name)}　<span class="badge badge--neutral">${esc(d.status)}</span></label>` +
+          `　離職日期<input type="date" data-cmp-depart-date="${i}" class="form-control" style="display:inline-block;width:auto;height:auto;padding:.1rem .3rem;font-size:.8rem;margin-left:.35rem"></li>`).join('') + '</ul>');
+    }
+
+    if (c.e) {
+      parts.push(`<h3 style="margin:.75rem 0 .35rem;font-size:.95rem;color:#b91c1c">無法處理（${c.e}）</h3>`);
+      parts.push('<ul style="margin:0 0 .5rem;padding-left:1.1rem;font-size:.85rem;line-height:1.7;color:#b91c1c">' +
+        diff.errors.map(er => `<li>${esc(er.display)}：${esc(er.reason)}</li>`).join('') + '</ul>');
+    }
+
+    if (!c.n && !c.p && !c.d) {
+      parts.push('<p style="color:#64748b;font-size:.9rem">名冊與目前在職名單一致，沒有需要寫入的變更。</p>');
+    }
+    return parts.join('');
+  },
+
+  _bindActiveComparePreviewControls(diff) {
+    const bulkStatus = document.getElementById('cmpBulkStatus');
+    const bulkLoc = document.getElementById('cmpBulkLocation');
+    const bulkApply = document.getElementById('cmpBulkApply');
+    const bulkHireWrap = document.getElementById('cmpBulkHireWrap');
+    const syncHire = () => {
+      if (bulkHireWrap) bulkHireWrap.style.display = (bulkStatus && bulkStatus.value === '在勤') ? 'inline-flex' : 'none';
+    };
+    if (bulkStatus) bulkStatus.onchange = syncHire;
+    syncHire();
+    if (bulkApply) {
+      bulkApply.onclick = () => {
+        const status = bulkStatus ? bulkStatus.value : '在勤';
+        const loc = bulkLoc ? bulkLoc.value : '';
+        const hireEl = document.getElementById('cmpBulkHireDate');
+        const hireVal = status === '在勤' && hireEl && hireEl.value ? Pages._normalizeDateStr(hireEl.value) : '';
+        diff.news.forEach(n => {
+          if (!n.parental) {           // 育嬰者狀態固定，不受批次影響
+            n.final.status = status;
+            n.final.leaveDate = '';    // 批次僅套非離職狀態，清掉殘留離職日
+            if (hireVal) n.final.hireDate = hireVal;
+          }
+          n.final.workLocation = loc;  // 工作地點對所有新增人員套用
+        });
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) bodyEl.innerHTML = Pages._renderActiveComparePreview(diff);
+        Pages._bindActiveComparePreviewControls(diff);
+      };
+    }
+  },
+
+  _showActiveComparePreview(diff) {
+    // 有離職日期 → 狀態強制離職，與後端 personnelRowFromObj_ 規則同步
+    diff.news.forEach(n => { if (n.final.leaveDate) n.final.status = '離職'; });
+    const hasWork = (diff.news.length + diff.parentalUpdates.length + diff.departures.length) > 0;
+    Components.showModal('比對在職人員 — 預覽', Pages._renderActiveComparePreview(diff), async () => {
+      const records = [];
+
+      diff.news.forEach((n, i) => {
+        if (!n.parental && !n.final.leaveDate) {
+          const sel = document.querySelector(`select[data-cmp-news-status="${i}"]`);
+          if (sel && sel.value) n.final.status = sel.value;
+        }
+        const locSel = document.querySelector(`select[data-cmp-news-loc="${i}"]`);
+        if (locSel) n.final.workLocation = locSel.value || '';
+        if (n.final.leaveDate) n.final.status = '離職';
+        records.push(n.final);
+      });
+
+      diff.parentalUpdates.forEach((u, i) => {
+        const cb = document.querySelector(`input[data-cmp-parental="${i}"]`);
+        if (cb && cb.checked) records.push(u.final);
+      });
+
+      diff.departures.forEach((d, i) => {
+        const cb = document.querySelector(`input[data-cmp-depart="${i}"]`);
+        if (!cb || !cb.checked) return;
+        const dateEl = document.querySelector(`input[data-cmp-depart-date="${i}"]`);
+        const leaveVal = dateEl && dateEl.value ? Pages._normalizeDateStr(dateEl.value) : '';
+        records.push(Object.assign({}, d.final, { status: '離職', leaveDate: leaveVal || d.final.leaveDate || '' }));
+      });
+
+      if (!records.length) { Components.showToast('沒有勾選任何需要寫入的變更', 'warning'); return true; }
+
+      const progress = Pages._createProgressController({
+        durationMs: 10000, hint: '寫入人員主檔', messages: Pages._importProgressMessages(),
+      });
+      try {
+        progress.start();
+        const res = await API.importPersonnelBatch(records);
+        await progress.complete();
+        await Pages._reloadPersonnelAfterImport();
+        Components.showToast(`比對完成：新增 ${res.added}、更新 ${res.updated}、略過 ${res.skipped}`,
+          res.skipped ? 'warning' : 'success');
+        return true;
+      } catch (err) {
+        progress.stop();
+        API.handleError(err);
+        const bodyEl = document.getElementById('modalBody');
+        if (bodyEl) bodyEl.innerHTML = Pages._renderActiveComparePreview(diff);
+        Pages._bindActiveComparePreviewControls(diff);
+        return false;
+      }
+    }, '確認寫入', {
+      closeBeforeConfirm: false,
+      modalClassName: 'modal--wide',
+      bodyClassName: 'modal__body--dense',
+      hideConfirm: !hasWork,
+      cancelText: hasWork ? '取消' : '關閉',
+    });
+    Pages._bindActiveComparePreviewControls(diff);
   },
 
   async _editPerson(email, name) {
