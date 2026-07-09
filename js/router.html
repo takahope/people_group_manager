@@ -1436,6 +1436,19 @@ const Pages = {
     return byLabel ? byLabel.key : s;
   },
 
+  // 匯入專用信箱正規化：已知別名網域統一為 @as.edu.tw（保留 @ 前帳號、其他網域原樣）。
+  // 供匯入預覽階段模糊比對，讓 XXX@gate.sinica.edu.tw 能對應到既有的 XXX@as.edu.tw。
+  // 須與後端 canonicalizeImportEmail_ 的別名清單同步；此規則僅用於匯入。
+  _importEmailAliasDomains: ['gate.sinica.edu.tw', 'as.edu.tw'],
+  _canonicalizeImportEmail(email) {
+    const raw = String(email == null ? '' : email).trim();
+    const at = raw.lastIndexOf('@');
+    if (at < 0) return raw;
+    const local = raw.slice(0, at);
+    const domain = raw.slice(at + 1).toLowerCase();
+    return Pages._importEmailAliasDomains.indexOf(domain) >= 0 ? local + '@as.edu.tw' : raw;
+  },
+
   // =============================================
   // 人員表格欄位顯示選擇
   // =============================================
@@ -1902,7 +1915,7 @@ const Pages = {
     const byEmail = new Map();
     const byName = new Map(); // nameKey -> [persons]，供無信箱的離職人員以姓名比對
     (Array.isArray(existingList) ? existingList : []).forEach(p => {
-      const emailKey = String(p.email || '').trim().toLowerCase();
+      const emailKey = Pages._canonicalizeImportEmail(p.email).toLowerCase();
       if (emailKey) byEmail.set(emailKey, p);
       const nameKey = String(p.name || '').trim().toLowerCase();
       if (!nameKey) return;
@@ -1918,7 +1931,7 @@ const Pages = {
     const seen = new Set();
 
     imported.forEach(rec => {
-      let email = String(rec.email || '').trim();
+      let email = Pages._canonicalizeImportEmail(rec.email); // 已知別名網域統一為 @as.edu.tw 再比對
       const name = String(rec.name || '').trim();
       const displayKey = () => email || `（無信箱）${name}`;
 
@@ -2255,7 +2268,7 @@ const Pages = {
     const byEmail = new Map();
     const byName = new Map();
     existingList.forEach(p => {
-      const emailKey = String(p.email || '').trim().toLowerCase();
+      const emailKey = Pages._canonicalizeImportEmail(p.email).toLowerCase();
       if (emailKey) byEmail.set(emailKey, p);
       const nameKey = String(p.name || '').trim().toLowerCase();
       if (!nameKey) return;
@@ -2286,7 +2299,7 @@ const Pages = {
     });
 
     records.forEach(rec => {
-      const email = String(rec.email || '').trim();
+      const email = Pages._canonicalizeImportEmail(rec.email); // 已知別名網域統一為 @as.edu.tw 再比對
       const name = String(rec.name || '').trim();
       const displayKey = email || `（無信箱）${name}`;
 

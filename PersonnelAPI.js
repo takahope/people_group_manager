@@ -515,6 +515,21 @@ function exportPersonnel(options) {
  * @param {Array<{email,name,status,phone,mobile,hireDate,leaveDate,workLocation,action}>} records
  * @returns {string} JSON 回應 { added, updated, skipped, errors:[{email,reason}] }
  */
+/**
+ * 匯入專用信箱正規化：已知別名網域一律轉為 @as.edu.tw（保留 @ 前帳號、其他網域原樣保留）。
+ * 對應前端 Pages._canonicalizeImportEmail 的模糊比對；此規則僅用於匯入寫入。
+ * 別名清單須與前端 _importEmailAliasDomains 同步。
+ */
+const IMPORT_EMAIL_ALIAS_DOMAINS_ = ['gate.sinica.edu.tw', 'as.edu.tw'];
+function canonicalizeImportEmail_(email) {
+  const raw = String(email == null ? '' : email).trim();
+  const at = raw.lastIndexOf('@');
+  if (at < 0) return raw;
+  const local = raw.slice(0, at);
+  const domain = raw.slice(at + 1).toLowerCase();
+  return IMPORT_EMAIL_ALIAS_DOMAINS_.indexOf(domain) >= 0 ? local + '@as.edu.tw' : raw;
+}
+
 function importPersonnelBatch(records) {
   if (!checkPermission('personnel.import')) return errorResponse('無匯入人員資料的權限');
 
@@ -526,7 +541,8 @@ function importPersonnelBatch(records) {
   const seen = new Set();
 
   list.forEach(rec => {
-    const email = String(rec && rec.email || '').trim();
+    // 已知別名網域一律轉為 @as.edu.tw，讓去重、寫入與更新比對都以正規化信箱為準
+    const email = canonicalizeImportEmail_(String(rec && rec.email || '').trim());
     const name = String(rec && rec.name || '').trim();
     const displayKey = email || `（無信箱）${name}`;
     // 統一去重鍵：有信箱用信箱，無信箱（離職人員）用姓名
