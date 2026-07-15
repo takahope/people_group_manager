@@ -89,13 +89,20 @@
     .passcode-progress__msg-stack span,
     .passcode-progress__pct-stack span {
       position: absolute;
-      left: 0;
       top: 0;
       opacity: 0;
       white-space: nowrap;
     }
+    .passcode-progress__msg-stack span {
+      left: 0;
+    }
     .passcode-progress__pct-stack {
       margin-left: .75rem;
+    }
+    .passcode-progress__pct-stack span {
+      /* 堆疊容器因子元素皆為絕對定位而自身寬度趨近於 0，用 right:0 讓文字
+         從容器（＝進度條）右緣往左長，才能與 .progress-bar 右邊界對齊。 */
+      right: 0;
     }
     /* 前三句：淡入後停留，輪到下一句前準時淡出（opacity 回 0），避免與下一句同時
        opacity:1 而重疊成亂碼——因為堆疊文字沒有底色，opacity:1 不會互相遮蔽。 */
