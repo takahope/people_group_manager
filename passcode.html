@@ -50,6 +50,21 @@
     .passcode-card__actions a.btn:hover {
       text-decoration: none;
     }
+    /* 點擊保底按鈕後的假進度條（沿用全域 .progress-bar / .progress-bar__fill） */
+    .passcode-progress {
+      margin-top: .9rem;
+    }
+    .passcode-progress__bar {
+      margin-bottom: .4rem;
+    }
+    .passcode-progress__meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      color: var(--color-text-sub);
+      font-size: .82rem;
+    }
   </style>
 </head>
 <body>
@@ -72,6 +87,15 @@
         <div class="passcode-card__actions">
           <button class="btn btn--primary" id="passcodeSubmitBtn">送出</button>
         </div>
+        <div class="passcode-progress" id="passcodeProgress" hidden>
+          <div class="progress-bar passcode-progress__bar">
+            <div class="progress-bar__fill" id="passcodeProgressFill" style="width:0%"></div>
+          </div>
+          <div class="passcode-progress__meta">
+            <span id="passcodeProgressMsg">正在準備頁面…</span>
+            <span id="passcodeProgressPct">0%</span>
+          </div>
+        </div>
       <? } ?>
     </div>
   </div>
@@ -87,6 +111,34 @@
         errorEl.hidden = !message;
         errorEl.textContent = message || '';
         input.classList.toggle('form-control--error', !!message);
+      }
+
+      // 假進度條：點擊保底連結後，用 3 秒跑到 90% 掩蓋實際頁面轉跳的停滯感，
+      // 訊息每秒輪播；因實際工作是「瀏覽器離開本頁、載入新頁」，沒有前端可監聽的完成事件，
+      // 故不追 100%，維持在 90% 並持續輪播訊息，直到頁面轉跳（本頁被卸載）為止。
+      function startTransitionProgress() {
+        const wrap = document.getElementById('passcodeProgress');
+        const fill = document.getElementById('passcodeProgressFill');
+        const msgEl = document.getElementById('passcodeProgressMsg');
+        const pctEl = document.getElementById('passcodeProgressPct');
+        const messages = ['正在驗證使用者身分…', '正在載入系統模組…', '正在準備頁面資料…', '即將完成，請稍候…'];
+        const durationSec = 3;
+        const stepPct = 90 / durationSec;
+        let pct = 0;
+        let tickIndex = 0;
+
+        wrap.hidden = false;
+        msgEl.textContent = messages[0];
+        fill.style.width = '0%';
+        pctEl.textContent = '0%';
+
+        setInterval(function () {
+          tickIndex++;
+          pct = Math.min(90, pct + stepPct);
+          fill.style.width = pct + '%';
+          pctEl.textContent = Math.round(pct) + '%';
+          msgEl.textContent = messages[tickIndex % messages.length];
+        }, 1000);
       }
 
       function submit() {
@@ -113,6 +165,16 @@
                 link.target = '_top';
                 link.className = 'btn btn--primary';
                 link.textContent = '✅ 驗證成功，點此進入系統';
+                link.addEventListener('click', function (e) {
+                  // 攔截原生導航，改為：先顯示假進度條，再同步觸發導向。
+                  // window.open 必須留在本次點擊事件的同步呼叫堆疊內才算數，
+                  // 一旦被 setTimeout/Promise 等非同步延後，Safari/iOS 會判定手勢已過期而靜默擋下。
+                  e.preventDefault();
+                  link.style.pointerEvents = 'none';
+                  link.textContent = '轉跳中…';
+                  startTransitionProgress();
+                  window.open(appUrl, '_top');
+                });
                 btn.parentNode.appendChild(link);
                 // 快速路徑：手勢仍有效時（桌面 Chrome 回應快）直接無感轉跳
                 window.open(appUrl, '_top');
