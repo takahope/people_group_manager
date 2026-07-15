@@ -97,21 +97,38 @@
     .passcode-progress__pct-stack {
       margin-left: .75rem;
     }
-    .passcode-progress.is-animating .passcode-progress__msg-stack span,
-    .passcode-progress.is-animating .passcode-progress__pct-stack span {
-      animation: passcodeProgressStep 3s steps(1) forwards;
+    /* 前三句：淡入後停留，輪到下一句前準時淡出（opacity 回 0），避免與下一句同時
+       opacity:1 而重疊成亂碼——因為堆疊文字沒有底色，opacity:1 不會互相遮蔽。 */
+    .passcode-progress.is-animating .passcode-progress__msg-stack span:nth-child(1),
+    .passcode-progress.is-animating .passcode-progress__pct-stack span:nth-child(1) {
+      animation: passcodeProgressPulse 1s steps(1) forwards;
+      animation-delay: 0s;
     }
-    .passcode-progress__msg-stack span:nth-child(1),
-    .passcode-progress__pct-stack span:nth-child(1) { animation-delay: 0s; }
-    .passcode-progress__msg-stack span:nth-child(2),
-    .passcode-progress__pct-stack span:nth-child(2) { animation-delay: 1s; }
-    .passcode-progress__msg-stack span:nth-child(3),
-    .passcode-progress__pct-stack span:nth-child(3) { animation-delay: 2s; }
-    .passcode-progress__msg-stack span:nth-child(4),
-    .passcode-progress__pct-stack span:nth-child(4) { animation-delay: 2.8s; }
-    @keyframes passcodeProgressStep {
+    .passcode-progress.is-animating .passcode-progress__msg-stack span:nth-child(2),
+    .passcode-progress.is-animating .passcode-progress__pct-stack span:nth-child(2) {
+      animation: passcodeProgressPulse 1s steps(1) forwards;
+      animation-delay: 1s;
+    }
+    .passcode-progress.is-animating .passcode-progress__msg-stack span:nth-child(3),
+    .passcode-progress.is-animating .passcode-progress__pct-stack span:nth-child(3) {
+      animation: passcodeProgressPulse .8s steps(1) forwards;
+      animation-delay: 2s;
+    }
+    /* 最後一句：淡入後停留在 opacity:1，直到頁面轉跳（不淡出）。 */
+    .passcode-progress.is-animating .passcode-progress__msg-stack span:nth-child(4),
+    .passcode-progress.is-animating .passcode-progress__pct-stack span:nth-child(4) {
+      animation: passcodeProgressPulseFinal .2s steps(1) forwards;
+      animation-delay: 2.8s;
+    }
+    @keyframes passcodeProgressPulse {
       0%   { opacity: 0; }
-      1%   { opacity: 1; }
+      5%   { opacity: 1; }
+      95%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    @keyframes passcodeProgressPulseFinal {
+      0%   { opacity: 0; }
+      50%  { opacity: 1; }
       100% { opacity: 1; }
     }
   </style>
