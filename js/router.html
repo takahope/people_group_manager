@@ -3054,6 +3054,11 @@ const Pages = {
     if (!section) return;
 
     const total = state.filteredItems.length;
+    const uniquePeople = new Set(
+      state.filteredItems
+        .map(item => String(item.email || '').trim().toLowerCase())
+        .filter(Boolean)
+    ).size;
     const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
     if (state.currentPage > totalPages) state.currentPage = totalPages;
 
@@ -3061,7 +3066,7 @@ const Pages = {
       section.innerHTML = `
         <div class="card">
           <div class="assignment-summary">
-            <div class="assignment-summary__meta">共 0 筆 / 第 1 頁，共 1 頁</div>
+            <div class="assignment-summary__meta">共 0 筆 · 實際 0 人 / 第 1 頁，共 1 頁</div>
           </div>
           <div class="empty-state">
             <div class="empty-state__icon">📭</div>
@@ -3078,7 +3083,7 @@ const Pages = {
     section.innerHTML = `
       <div class="card">
         <div class="assignment-summary">
-          <div class="assignment-summary__meta">共 ${total} 筆 / 第 ${state.currentPage} 頁，共 ${totalPages} 頁</div>
+          <div class="assignment-summary__meta">共 ${total} 筆 · 實際 ${uniquePeople} 人 / 第 ${state.currentPage} 頁，共 ${totalPages} 頁</div>
         </div>
         <div class="table-wrapper">
           <table class="data-table">

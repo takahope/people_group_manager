@@ -573,6 +573,9 @@ function buildOrgMemberPayload_(orgCode, analysis, allAssignments) {
     summary: {
       orgCount: subtreeCodes.size,
       assignmentCount: assignments.length,
+      uniqueMemberCount: new Set(
+        assignments.map(a => String(a.email || '').trim().toLowerCase()).filter(Boolean)
+      ).size,
     },
     sections,
     warnings,

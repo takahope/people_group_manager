@@ -772,6 +772,10 @@ const Components = (() => {
           <strong>${escapeHtml(String(summary.assignmentCount || 0))}</strong>
           <span>職務配置</span>
         </span>
+        <span class="org-member-kpi">
+          <strong>${escapeHtml(String(summary.uniqueMemberCount || 0))}</strong>
+          <span>實際人數</span>
+        </span>
       </div>`;
 
     if (sections.length === 0) {
