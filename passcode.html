@@ -50,20 +50,69 @@
     .passcode-card__actions a.btn:hover {
       text-decoration: none;
     }
-    /* 點擊保底按鈕後的假進度條（沿用全域 .progress-bar / .progress-bar__fill） */
+    /* 點擊保底按鈕後的假進度條（沿用全域 .progress-bar / .progress-bar__fill）。
+       改用 CSS @keyframes 驅動，不用 setInterval：因為此區塊會在「本頁即將被
+       window.open(_top) 導離」的同一個同步呼叫堆疊內啟動，瀏覽器（尤其行動版
+       Safari）會把即將卸載的文件視為背景頁而節流／暫停 JS 計時器，setInterval
+       回呼可能永遠不會被排程執行；CSS 動畫由渲染/合成執行緒插補畫面，不依賴
+       JS tick 存活，才能在導航期間持續播放。 */
     .passcode-progress {
       margin-top: .9rem;
     }
     .passcode-progress__bar {
       margin-bottom: .4rem;
     }
-    .passcode-progress__meta {
+    .passcode-progress__fill {
+      width: 0;
+    }
+    .passcode-progress.is-animating .passcode-progress__fill {
+      animation: passcodeProgressFill 3s ease-out forwards;
+    }
+    @keyframes passcodeProgressFill {
+      from { width: 0%; }
+      to   { width: 90%; }
+    }
+    .passcode-progress__status {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: .75rem;
       color: var(--color-text-sub);
       font-size: .82rem;
+    }
+    .passcode-progress__msg-stack,
+    .passcode-progress__pct-stack {
+      position: relative;
+      display: inline-block;
+      height: 1.2em;
+    }
+    .passcode-progress__msg-stack span,
+    .passcode-progress__pct-stack span {
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      white-space: nowrap;
+    }
+    .passcode-progress__pct-stack {
+      margin-left: .75rem;
+    }
+    .passcode-progress.is-animating .passcode-progress__msg-stack span,
+    .passcode-progress.is-animating .passcode-progress__pct-stack span {
+      animation: passcodeProgressStep 3s steps(1) forwards;
+    }
+    .passcode-progress__msg-stack span:nth-child(1),
+    .passcode-progress__pct-stack span:nth-child(1) { animation-delay: 0s; }
+    .passcode-progress__msg-stack span:nth-child(2),
+    .passcode-progress__pct-stack span:nth-child(2) { animation-delay: 1s; }
+    .passcode-progress__msg-stack span:nth-child(3),
+    .passcode-progress__pct-stack span:nth-child(3) { animation-delay: 2s; }
+    .passcode-progress__msg-stack span:nth-child(4),
+    .passcode-progress__pct-stack span:nth-child(4) { animation-delay: 2.8s; }
+    @keyframes passcodeProgressStep {
+      0%   { opacity: 0; }
+      1%   { opacity: 1; }
+      100% { opacity: 1; }
     }
   </style>
 </head>
@@ -89,11 +138,21 @@
         </div>
         <div class="passcode-progress" id="passcodeProgress" hidden>
           <div class="progress-bar passcode-progress__bar">
-            <div class="progress-bar__fill" id="passcodeProgressFill" style="width:0%"></div>
+            <div class="progress-bar__fill passcode-progress__fill"></div>
           </div>
-          <div class="passcode-progress__meta">
-            <span id="passcodeProgressMsg">正在準備頁面…</span>
-            <span id="passcodeProgressPct">0%</span>
+          <div class="passcode-progress__status">
+            <span class="passcode-progress__msg-stack">
+              <span>正在驗證使用者身分…</span>
+              <span>正在載入系統模組…</span>
+              <span>正在準備頁面資料…</span>
+              <span>即將完成，請稍候…</span>
+            </span>
+            <span class="passcode-progress__pct-stack">
+              <span>15%</span>
+              <span>45%</span>
+              <span>75%</span>
+              <span>90%</span>
+            </span>
           </div>
         </div>
       <? } ?>
@@ -113,32 +172,19 @@
         input.classList.toggle('form-control--error', !!message);
       }
 
-      // 假進度條：點擊保底連結後，用 3 秒跑到 90% 掩蓋實際頁面轉跳的停滯感，
-      // 訊息每秒輪播；因實際工作是「瀏覽器離開本頁、載入新頁」，沒有前端可監聽的完成事件，
-      // 故不追 100%，維持在 90% 並持續輪播訊息，直到頁面轉跳（本頁被卸載）為止。
+      // 假進度條：點擊保底連結後，用 3 秒跑到 90% 掩蓋實際頁面轉跳的停滯感，訊息每秒輪播。
+      // 改用 CSS @keyframes 驅動（見 <style> 內 .passcode-progress.is-animating），
+      // 不用 setInterval：本函式會在「即將呼叫 window.open(_top) 導離本頁」的同一個
+      // 同步呼叫堆疊內執行，瀏覽器（尤其行動版 Safari）會把即將卸載的文件當背景頁
+      // 節流／暫停 JS 計時器，導致 setInterval 回呼實測上完全不會被觸發（卡在 0%、
+      // 卡在第一句訊息）；CSS 動畫由渲染/合成執行緒插補，不依賴 JS tick 存活。
       function startTransitionProgress() {
         const wrap = document.getElementById('passcodeProgress');
-        const fill = document.getElementById('passcodeProgressFill');
-        const msgEl = document.getElementById('passcodeProgressMsg');
-        const pctEl = document.getElementById('passcodeProgressPct');
-        const messages = ['正在驗證使用者身分…', '正在載入系統模組…', '正在準備頁面資料…', '即將完成，請稍候…'];
-        const durationSec = 3;
-        const stepPct = 90 / durationSec;
-        let pct = 0;
-        let tickIndex = 0;
-
         wrap.hidden = false;
-        msgEl.textContent = messages[0];
-        fill.style.width = '0%';
-        pctEl.textContent = '0%';
-
-        setInterval(function () {
-          tickIndex++;
-          pct = Math.min(90, pct + stepPct);
-          fill.style.width = pct + '%';
-          pctEl.textContent = Math.round(pct) + '%';
-          msgEl.textContent = messages[tickIndex % messages.length];
-        }, 1000);
+        // 強制 reflow：確保剛顯示（原本 display:none）就加動畫 class 時，
+        // 瀏覽器不會把「顯示」與「加 class」合併成同一個樣式運算而跳過動畫起點。
+        void wrap.offsetWidth;
+        wrap.classList.add('is-animating');
       }
 
       function submit() {
