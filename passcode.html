@@ -45,6 +45,11 @@
       justify-content: center;
       margin-top: .5rem;
     }
+    /* 驗證成功後的 <a> 保底按鈕：蓋掉全域 a:hover 底線 */
+    .passcode-card__actions a.btn,
+    .passcode-card__actions a.btn:hover {
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
@@ -95,12 +100,24 @@
           .withSuccessHandler(function (raw) {
             const result = (typeof raw === 'string') ? JSON.parse(raw) : raw;
             if (result && result.success) {
-              btn.textContent = '驗證成功，載入中...';
-              // 以 Web App 網址整頁導向（_top），避免沙盒 iframe reload 白屏
+              // 以 Web App 網址整頁導向（_top），避免沙盒 iframe reload 白屏。
+              // 注意：GAS 沙盒 iframe 只有 allow-top-navigation-by-user-activation，
+              // 此處為非同步 callback，使用者手勢啟用權可能已過期（Safari/iOS 幾乎必擋、
+              // Chrome 超過約 5 秒也擋），自動導向會被「靜默」阻擋。
+              // 因此同時渲染真正的 <a target="_top"> 保底按鈕——使用者親手點擊帶新手勢，必定放行。
               const appUrl = result.data && result.data.appUrl;
               if (appUrl) {
+                btn.hidden = true;
+                const link = document.createElement('a');
+                link.href = appUrl;
+                link.target = '_top';
+                link.className = 'btn btn--primary';
+                link.textContent = '✅ 驗證成功，點此進入系統';
+                btn.parentNode.appendChild(link);
+                // 快速路徑：手勢仍有效時（桌面 Chrome 回應快）直接無感轉跳
                 window.open(appUrl, '_top');
               } else {
+                btn.textContent = '驗證成功，載入中...';
                 window.setTimeout(() => location.reload(), 300);
               }
             } else {
