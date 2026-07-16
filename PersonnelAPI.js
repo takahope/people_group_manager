@@ -136,6 +136,7 @@ function addAssignment(assignObj) {
     ...assignObj,
     name: person.name,
     orgName: org.name,
+    managerName: pendingAssignment.managerName,
   });
   DataService.appendAuditLog('ADD', `職務配置: ${assignObj.email}`, `組別: ${assignObj.orgCode}`);
 
@@ -156,8 +157,20 @@ function updateAssignment(rowIndex, assignObj) {
   if (!checkPermission('assignment.write')) return errorResponse('無編輯職務配置的權限');
   if (!rowIndex) return errorResponse('缺少 rowIndex 參數');
 
-  DataService.updateAssignmentByRow(rowIndex, assignObj);
-  DataService.appendAuditLog('UPDATE', `職務配置列 ${rowIndex}`, JSON.stringify(assignObj));
+  const person = assignObj.email ? DataService.findPersonByEmail(assignObj.email) : null;
+  const org = assignObj.orgCode ? DataService.findOrgByCode(assignObj.orgCode) : null;
+  const managerName = assignObj.managerEmail
+    ? ((DataService.findPersonByEmail(assignObj.managerEmail) || {}).name || assignObj.managerName || '')
+    : '';
+  const updatedObj = {
+    ...assignObj,
+    name: person ? person.name : (assignObj.name || ''),
+    orgName: org ? org.name : (assignObj.orgName || ''),
+    managerName,
+  };
+
+  DataService.updateAssignmentByRow(rowIndex, updatedObj);
+  DataService.appendAuditLog('UPDATE', `職務配置列 ${rowIndex}`, JSON.stringify(updatedObj));
   return successResponse({ message: '職務配置更新成功' });
 }
 

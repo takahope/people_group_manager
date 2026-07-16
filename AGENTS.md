@@ -26,3 +26,9 @@ No local `.git` history is available in this directory, so commit conventions ca
 
 ## Security & Configuration Tips
 Do not commit real spreadsheet IDs, user data, or production-only credentials. Replace placeholders like `SPREADSHEET_ID` in `Code.gs` per environment, and preserve permission checks in `AuthService.gs` when adding new routes or APIs.
+
+## Incident & Fix Log
+
+- **2026-07-16 Fix Personnel Assignment Supervisor Name Unset Issue**:
+  - **Root Cause**: `PersonnelAPI.addAssignment` computed the supervisor name (`managerName`) during matrix concurrency simulation but omitted `managerName` when calling `DataService.appendAssignment(...)`, resulting in empty string (`''`) written to Column G (`MANAGER_NAME`). Upon reload, the UI fell back to displaying "未設定".
+  - **Fix**: Updated `addAssignment` to pass `managerName: pendingAssignment.managerName` into `appendAssignment(...)`. Also enhanced `updateAssignment(...)` to ensure `managerName`, `name`, and `orgName` are properly computed and validated during updates.
