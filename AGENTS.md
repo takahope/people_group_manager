@@ -32,3 +32,8 @@ Do not commit real spreadsheet IDs, user data, or production-only credentials. R
 - **2026-07-16 Fix Personnel Assignment Supervisor Name Unset Issue**:
   - **Root Cause**: `PersonnelAPI.addAssignment` computed the supervisor name (`managerName`) during matrix concurrency simulation but omitted `managerName` when calling `DataService.appendAssignment(...)`, resulting in empty string (`''`) written to Column G (`MANAGER_NAME`). Upon reload, the UI fell back to displaying "未設定".
   - **Fix**: Updated `addAssignment` to pass `managerName: pendingAssignment.managerName` into `appendAssignment(...)`. Also enhanced `updateAssignment(...)` to ensure `managerName`, `name`, and `orgName` are properly computed and validated during updates.
+
+- **2026-07-17 Filter Resigned Personnel in Assignment Module**:
+  - **Root Cause**: `getAssignmentList` returned all Sheet 3 records without checking Sheet 1 status (`status === '離職'`), while `getAssignmentFormOptions` did not filter resigned personnel in `<datalist>`.
+  - **Fix**: Updated `PersonnelAPI.js` to filter out `status === '離職'` from Sheet 1 in `getAssignmentList()` and `getAssignmentFormOptions()`. Added validation in `addAssignment()` and `updateAssignment()` to reject target personnel or supervisors whose status is `'離職'`.
+

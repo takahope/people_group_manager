@@ -112,6 +112,14 @@ function addAssignment(assignObj) {
   // 確認人員存在
   const person = DataService.findPersonByEmail(assignObj.email);
   if (!person) return errorResponse(`人員 ${assignObj.email} 不存在`);
+  if (String(person.status || '').trim() === '離職') return errorResponse(`人員 ${assignObj.email} 於主檔狀態為離職，無法配置職務`);
+
+  if (assignObj.managerEmail) {
+    const managerPerson = DataService.findPersonByEmail(assignObj.managerEmail);
+    if (managerPerson && String(managerPerson.status || '').trim() === '離職') {
+      return errorResponse(`直屬主管 ${assignObj.managerEmail} 已離職，請重新選擇現職主管`);
+    }
+  }
 
   // 確認組別代碼存在
   const org = DataService.findOrgByCode(assignObj.orgCode);
@@ -158,6 +166,15 @@ function updateAssignment(rowIndex, assignObj) {
   if (!rowIndex) return errorResponse('缺少 rowIndex 參數');
 
   const person = assignObj.email ? DataService.findPersonByEmail(assignObj.email) : null;
+  if (person && String(person.status || '').trim() === '離職') {
+    return errorResponse(`人員 ${assignObj.email} 於主檔狀態為離職，無法配置職務`);
+  }
+  if (assignObj.managerEmail) {
+    const managerPerson = DataService.findPersonByEmail(assignObj.managerEmail);
+    if (managerPerson && String(managerPerson.status || '').trim() === '離職') {
+      return errorResponse(`直屬主管 ${assignObj.managerEmail} 已離職，請重新選擇現職主管`);
+    }
+  }
   const org = assignObj.orgCode ? DataService.findOrgByCode(assignObj.orgCode) : null;
   const managerName = assignObj.managerEmail
     ? ((DataService.findPersonByEmail(assignObj.managerEmail) || {}).name || assignObj.managerName || '')
@@ -386,7 +403,25 @@ function getAssignmentList() {
     }
 
     const assignments = DataService.getAllAssignments();
-    const items = buildAssignmentListItems(assignments);
+    const allPeople = DataService.getSheet1Data();
+    const resignedEmails = new Set(
+      allPeople
+        .filter(p => String(p.status || '').trim() === '離職' && p.email)
+        .map(p => String(p.email).trim().toLowerCase())
+    );
+    const resignedNames = new Set(
+      allPeople
+        .filter(p => String(p.status || '').trim() === '離職' && !p.email)
+        .map(p => String(p.name).trim())
+    );
+
+    const activeAssignments = assignments.filter(item => {
+      const emailKey = String(item.email || '').trim().toLowerCase();
+      if (emailKey && resignedEmails.has(emailKey)) return false;
+      if (!emailKey && resignedNames.has(String(item.name || '').trim())) return false;
+      return true;
+    });
+    const items = buildAssignmentListItems(activeAssignments);
     return successResponse(items);
   } catch (error) {
     Logger.log('getAssignmentList 錯誤：' + (error.stack || error.message));
@@ -406,6 +441,7 @@ function getAssignmentFormOptions() {
     }
 
     const personnel = DataService.getSheet1Data()
+      .filter(p => String(p.status || '').trim() !== '離職')
       .map(p => ({
         email: p.email,
         name: p.name,
