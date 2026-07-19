@@ -40,6 +40,7 @@ function runFullAudit() {
       { id: 'org_foreign_key',           label: '組別外鍵完整性', fn: _checkOrgForeignKey },
       { id: 'org_cycle',                 label: '組織樹無迴圈',   fn: _checkOrgCycle },
       { id: 'manager_cycle',             label: '主管鏈無迴圈',   fn: _checkManagerCycle },
+      { id: 'assignment_resigned',       label: '離職人員殘留檢查', fn: _checkAssignmentResignedPerson },
     ];
 
     const results = checks.map(({ id, label, fn }) => {
@@ -114,6 +115,13 @@ function checkOrgCycle() {
   try {
     if (!checkPermission('audit.run')) return errorResponse('無權限');
     return successResponse(_checkOrgCycle());
+  } catch (e) { return errorResponse(e.message); }
+}
+
+function checkAssignmentResignedPerson() {
+  try {
+    if (!checkPermission('audit.run')) return errorResponse('無權限');
+    return successResponse(_checkAssignmentResignedPerson());
   } catch (e) { return errorResponse(e.message); }
 }
 
@@ -380,6 +388,46 @@ function extractRoleCodes(raciItem) {
     .filter(Boolean)
     .join(',');
   return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * 檢查：職務配置表中是否殘留狀態為「離職」的人員
+ * 
+ * @returns {Array<{location, description, action, severity}>}
+ */
+function _checkAssignmentResignedPerson() {
+  const issues = [];
+  const allPeople = DataService.getSheet1Data();
+  const resignedEmails = new Set(
+    allPeople
+      .filter(p => String(p.status || '').trim() === '離職' && p.email)
+      .map(p => String(p.email).trim().toLowerCase())
+  );
+  const resignedNames = new Set(
+    allPeople
+      .filter(p => String(p.status || '').trim() === '離職' && !p.email)
+      .map(p => String(p.name).trim())
+  );
+
+  const assignments = DataService.getAllAssignments();
+  assignments.forEach(item => {
+    const emailKey = String(item.email || '').trim().toLowerCase();
+    const nameKey = String(item.name || '').trim();
+
+    const isResignedEmail = emailKey && resignedEmails.has(emailKey);
+    const isResignedName = !emailKey && nameKey && resignedNames.has(nameKey);
+
+    if (isResignedEmail || isResignedName) {
+      issues.push({
+        severity: SEVERITY.WARNING,
+        location: `Sheet 3: 列 ${item.rowIndex}`,
+        message:  `職務配置殘留已離職人員: ${item.name || item.email} (組別: ${item.orgCode})`,
+        action: '請至人員職務配置表刪除該筆無效紀錄',
+      });
+    }
+  });
+
+  return issues;
 }
 
 /**

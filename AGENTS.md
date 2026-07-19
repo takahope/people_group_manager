@@ -37,3 +37,7 @@ Do not commit real spreadsheet IDs, user data, or production-only credentials. R
   - **Root Cause**: `getAssignmentList` returned all Sheet 3 records without checking Sheet 1 status (`status === '離職'`), while `getAssignmentFormOptions` did not filter resigned personnel in `<datalist>`.
   - **Fix**: Updated `PersonnelAPI.js` to filter out `status === '離職'` from Sheet 1 in `getAssignmentList()` and `getAssignmentFormOptions()`. Added validation in `addAssignment()` and `updateAssignment()` to reject target personnel or supervisors whose status is `'離職'`.
 
+- **2026-07-18 Add Resigned Personnel Residual Audit**:
+  - **Purpose**: Identify residual assignment records (Sheet 3) for personnel who have already resigned in the master list (Sheet 1).
+  - **Implementation**: Added `_checkAssignmentResignedPerson` in `AuditAPI.js` which matches Sheet 3 records against Sheet 1's resigned personnel list. Registered as `assignment_resigned` under `runFullAudit()` with `WARNING` severity.
+
