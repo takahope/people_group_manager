@@ -3482,6 +3482,10 @@ const Pages = {
         <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           ${canPrint ? '<button class="btn btn--ghost btn--sm" id="orgPrintBtn">🖨 列印組織成員表</button>' : ''}
           <button class="btn btn--ghost btn--sm" id="orgExportBtn">⬇ 匯出組織圖</button>
+          <label class="form-check" style="display:flex;align-items:center;gap:.35rem;font-size:.85rem;cursor:pointer;color:var(--color-text-sub);user-select:none;margin:0 .25rem">
+            <input type="checkbox" id="orgExpandPersonnelToggle" class="form-check-input">
+            <span>展開所屬人員</span>
+          </label>
           <div style="display:flex;gap:.25rem" id="orgViewToggle">
             <button class="btn btn--primary btn--sm" data-view="chart">🗂️ 組織圖</button>
             <button class="btn btn--ghost btn--sm" data-view="list">☰ 清單</button>
@@ -3520,8 +3524,16 @@ const Pages = {
     }
 
     // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
-    // 預設進入頁面時顯示「PRE 代表人」起始節點、向下 3 層
-    const orgView = { mode: 'chart', type: null, startCode: 'PRE', depth: '3', result: null };
+    // 預設進入頁面時顯示「PRE 代表人」起始節點、向下 3 層；支援動態展開所屬人員
+    const orgView = {
+      mode: 'chart',
+      type: null,
+      startCode: 'PRE',
+      depth: '3',
+      result: null,
+      expandPersonnel: false,
+      expandedOrgCodes: new Set(),
+    };
     let orgViewFirstLoad = true; // 首次載入沿用上方預設起始節點，之後切換組織類別才重置
 
     let activeMemberRequestId = 0;
@@ -3706,9 +3718,50 @@ const Pages = {
 
       // 2. 依向下顯示層數裁剪子樹
       const maxDepth = orgView.depth === 'all' ? Infinity : Number(orgView.depth);
-      const tree = maxDepth === Infinity ? baseNodes : baseNodes.map(node => Components.pruneTreeByDepth(node, maxDepth));
+      const baseTree = maxDepth === Infinity ? baseNodes : baseNodes.map(node => Components.pruneTreeByDepth(node, maxDepth));
 
-      const opts = { onNodeClick: openOrgMemberModal };
+      // 3. 依「展開所屬人員」狀態動態注入成員節點
+      const injectPersonnelData = (nodeList) => {
+        if (!orgView.expandPersonnel || orgView.expandedOrgCodes.size === 0) return nodeList;
+
+        const cloneAndInject = (node) => {
+          const clone = Object.assign({}, node);
+          if (orgView.expandedOrgCodes.has(node.code)) {
+            const payload = getCachedOrgMemberPayload(node.code);
+            if (payload) {
+              // 取出該組織自身直接配置的人員（排除子組織重複計入）
+              const directSection = (payload.sections || []).find(s => s.orgCode === node.code);
+              clone.personnel = directSection ? directSection.assignments : [];
+            } else {
+              clone.personnel = [];
+            }
+          }
+          if (node.children && node.children.length > 0) {
+            clone.children = node.children.map(cloneAndInject);
+          }
+          return clone;
+        };
+
+        return nodeList.map(cloneAndInject);
+      };
+
+      const tree = injectPersonnelData(baseTree);
+
+      const handleNodeClick = (node) => {
+        if (!node || !node.code) return;
+        if (orgView.expandPersonnel) {
+          if (orgView.expandedOrgCodes.has(node.code)) {
+            orgView.expandedOrgCodes.delete(node.code);
+          } else {
+            orgView.expandedOrgCodes.add(node.code);
+          }
+          paintOrg();
+        } else {
+          openOrgMemberModal(node);
+        }
+      };
+
+      const opts = { onNodeClick: handleNodeClick };
       if (orgView.mode === 'chart') {
         treeDiv.classList.add('card--flush');
         const viewer = Components.OrgPanZoom(Components.OrgChart(tree, opts));
@@ -3751,6 +3804,15 @@ const Pages = {
 
     startOrgMemberPrefetch();
     await renderTree(null);
+
+    const expandPersonnelToggle = pageCtx.query('#orgExpandPersonnelToggle');
+    if (expandPersonnelToggle) {
+      expandPersonnelToggle.addEventListener('change', () => {
+        if (!pageCtx.isActive()) return;
+        orgView.expandPersonnel = expandPersonnelToggle.checked;
+        paintOrg();
+      });
+    }
 
     const orgTabs = pageCtx.query('#orgTypeTabs');
     if (orgTabs) {

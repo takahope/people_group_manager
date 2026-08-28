@@ -41,3 +41,6 @@ Do not commit real spreadsheet IDs, user data, or production-only credentials. R
   - **Purpose**: Identify residual assignment records (Sheet 3) for personnel who have already resigned in the master list (Sheet 1).
   - **Implementation**: Added `_checkAssignmentResignedPerson` in `AuditAPI.js` which matches Sheet 3 records against Sheet 1's resigned personnel list. Registered as `assignment_resigned` under `runFullAudit()` with `WARNING` severity.
 
+- **2026-08-28 Add Expand Personnel Mode in Org Chart**:
+  - **Feature**: Added `[☑ 展開所屬人員]` toggle in the Org Chart toolbar (`js/router.html`). When enabled, clicking an organization node dynamically renders compact personnel pills (`.org-chart__person-stack`) directly below the organization box without opening the modal.
+  - **Implementation**: Utilized existing `_orgMemberPrefetchState.byCode` memory cache for zero-latency personnel injection in `paintOrg()`. Enhanced `Components.orgChartNode_` in `js/components.html` and added compact vertical styling in `styles.html` to prevent horizontal width explosion. Enhanced `exportOrgChartPng` for off-screen DOM compatibility.

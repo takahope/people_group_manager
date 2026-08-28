@@ -428,9 +428,10 @@ const Components = (() => {
   function orgChartNode_(node, options) {
     const li = document.createElement('li');
 
+    const hasPersonnel = Array.isArray(node.personnel);
     const box = document.createElement('button');
     box.type = 'button';
-    box.className = 'org-chart__box';
+    box.className = 'org-chart__box' + (hasPersonnel ? ' org-chart__box--expanded' : '');
     box.innerHTML = `
       <span class="org-chart__code">${escapeHtml(node.code)}</span>
       <span class="org-chart__name">${escapeHtml(node.name)}</span>
@@ -443,6 +444,23 @@ const Components = (() => {
       if (typeof options.onNodeClick === 'function') options.onNodeClick(node);
     };
     li.appendChild(box);
+
+    // 渲染直屬人員堆疊名冊
+    if (hasPersonnel) {
+      const stack = document.createElement('div');
+      stack.className = 'org-chart__person-stack';
+      if (node.personnel.length === 0) {
+        stack.innerHTML = `<span class="org-chart__person-empty">（無配置人員）</span>`;
+      } else {
+        stack.innerHTML = node.personnel.map(p => `
+          <div class="org-chart__person-box" title="${escapeHtml(p.email || '')}">
+            <span class="org-chart__person-name">👤 ${escapeHtml(p.name || p.email)}</span>
+            <span class="org-chart__person-title">${escapeHtml(p.title || '成員')}</span>
+          </div>
+        `).join('');
+      }
+      li.appendChild(stack);
+    }
 
     if (node.children && node.children.length > 0) {
       const ul = document.createElement('ul');
@@ -697,6 +715,16 @@ const Components = (() => {
           el.style.display = 'inline-block';
         });
       }
+    });
+
+    // 離屏 DOM 人員卡片排版強化（確保 html2canvas 穩定渲染人員名冊）
+    chartEl.querySelectorAll('.org-chart__person-box').forEach(pBox => {
+      pBox.style.display = 'block';
+      pBox.style.textAlign = 'center';
+      pBox.querySelectorAll('.org-chart__person-name, .org-chart__person-title').forEach(span => {
+        span.style.display = 'inline-block';
+        span.style.margin = '0 3px';
+      });
     });
 
     document.body.appendChild(stage);
