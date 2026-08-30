@@ -3517,14 +3517,6 @@ const Pages = {
       if (printBtn) printBtn.addEventListener('click', () => Pages._showOrgPrintModal());
     }
 
-    const exportBtn = pageCtx.query('#orgExportBtn');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', () =>
-        Pages._showOrgExportModal(orgView.result?.nodes || [], orgView.startCode, orgView.depth));
-    }
-
-    // 檢視狀態：'list'（縮排清單）｜'chart'（圖形化組織圖）；快取目前型別的查詢結果
-    // 預設進入頁面時顯示「PRE 代表人」起始節點、向下 3 層；支援動態展開所屬人員
     const orgView = {
       mode: 'chart',
       type: null,
@@ -3581,6 +3573,69 @@ const Pages = {
 
       return prefetchState.preloadPromise;
     };
+
+    // 依「展開所屬人員」狀態動態注入成員節點（含人員去重與職稱優先級判定）
+    const deduplicatePersonnel_ = (assignments) => {
+      if (!Array.isArray(assignments)) return [];
+      const map = new Map();
+      const order = [];
+
+      assignments.forEach(item => {
+        if (!item) return;
+        const key = String(item.email || item.name || '').trim().toLowerCase();
+        if (!key) return;
+
+        if (!map.has(key)) {
+          map.set(key, item);
+          order.push(key);
+        } else {
+          const existing = map.get(key);
+          const existingHasLeader = String(existing?.title || '').includes('長');
+          const currentHasLeader = String(item?.title || '').includes('長');
+
+          // 若既有記錄不含「長」，而當前記錄含有「長」，則優先選用含「長」的職稱記錄
+          if (!existingHasLeader && currentHasLeader) {
+            map.set(key, item);
+          }
+        }
+      });
+
+      return order.map(key => map.get(key));
+    };
+
+    const injectPersonnelData = (nodeList) => {
+      if (!orgView.expandPersonnel || orgView.expandedOrgCodes.size === 0) return nodeList;
+
+      const cloneAndInject = (node) => {
+        const clone = Object.assign({}, node);
+        if (orgView.expandedOrgCodes.has(node.code)) {
+          const payload = getCachedOrgMemberPayload(node.code);
+          if (payload) {
+            // 取出該組織自身直接配置的人員（排除子組織重複計入）並去重
+            const directSection = (payload.sections || []).find(s => s.orgCode === node.code);
+            const rawAssignments = directSection ? directSection.assignments : [];
+            clone.personnel = deduplicatePersonnel_(rawAssignments);
+          } else {
+            clone.personnel = [];
+          }
+        }
+        if (node.children && node.children.length > 0) {
+          clone.children = node.children.map(cloneAndInject);
+        }
+        return clone;
+      };
+
+      return nodeList.map(cloneAndInject);
+    };
+
+    const exportBtn = pageCtx.query('#orgExportBtn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        const rawNodes = orgView.result?.nodes || [];
+        const treeWithPersonnel = injectPersonnelData(rawNodes);
+        Pages._showOrgExportModal(treeWithPersonnel, orgView.startCode, orgView.depth);
+      });
+    }
 
     const openOrgMemberModal = async (node) => {
       if (!node || !node.code) return;
@@ -3721,30 +3776,6 @@ const Pages = {
       const baseTree = maxDepth === Infinity ? baseNodes : baseNodes.map(node => Components.pruneTreeByDepth(node, maxDepth));
 
       // 3. 依「展開所屬人員」狀態動態注入成員節點
-      const injectPersonnelData = (nodeList) => {
-        if (!orgView.expandPersonnel || orgView.expandedOrgCodes.size === 0) return nodeList;
-
-        const cloneAndInject = (node) => {
-          const clone = Object.assign({}, node);
-          if (orgView.expandedOrgCodes.has(node.code)) {
-            const payload = getCachedOrgMemberPayload(node.code);
-            if (payload) {
-              // 取出該組織自身直接配置的人員（排除子組織重複計入）
-              const directSection = (payload.sections || []).find(s => s.orgCode === node.code);
-              clone.personnel = directSection ? directSection.assignments : [];
-            } else {
-              clone.personnel = [];
-            }
-          }
-          if (node.children && node.children.length > 0) {
-            clone.children = node.children.map(cloneAndInject);
-          }
-          return clone;
-        };
-
-        return nodeList.map(cloneAndInject);
-      };
-
       const tree = injectPersonnelData(baseTree);
 
       const handleNodeClick = (node) => {

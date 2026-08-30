@@ -718,8 +718,16 @@ const Components = (() => {
     });
 
     // 離屏 DOM 人員卡片排版強化（確保 html2canvas 穩定渲染人員名冊）
+    chartEl.querySelectorAll('.org-chart__person-stack').forEach(stack => {
+      stack.style.display = 'block';
+      stack.style.animation = 'none';
+      stack.style.opacity = '1';
+      stack.style.marginLeft = 'auto';
+      stack.style.marginRight = 'auto';
+    });
     chartEl.querySelectorAll('.org-chart__person-box').forEach(pBox => {
       pBox.style.display = 'block';
+      pBox.style.marginBottom = '4px';
       pBox.style.textAlign = 'center';
       pBox.querySelectorAll('.org-chart__person-name, .org-chart__person-title').forEach(span => {
         span.style.display = 'inline-block';
